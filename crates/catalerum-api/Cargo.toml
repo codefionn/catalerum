@@ -1,0 +1,94 @@
+[package]
+name = "catalerum-api"
+description = "catalerum: Axum HTTP + WebSocket + SSE scoped agent tool surface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+sqlite = ["catalerum-store/sqlite"]
+
+[dependencies]
+# Allowlist HTML sanitizer for ingested email bodies (`GET /emails/{id}`, SOUL
+# §28): the raw provider HTML is never served to the workbench unsanitized.
+ammonia = "4.1"
+async-trait = "0.1.89"
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+argon2 = "0.5.3"
+# Frame reassembly for the pod-forward encrypted output stream (`pod_forward`).
+bytes = "1"
+# Signed download-link tokens (`download_link` tool + `GET /download/{token}`, §9):
+# HMAC-SHA256 over the claims, URL-safe base64 for the token, tar+gzip for
+# directory archives.
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10.9"
+tar = "0.4"
+flate2 = "1"
+catalerum-automation = { version = "0.1.0", path = "../catalerum-automation" }
+catalerum-bus = { version = "0.1.0", path = "../catalerum-bus" }
+catalerum-channels = { version = "0.1.0", path = "../catalerum-channels" }
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+# Executor backends + the per-workspace WorkspaceSandbox/PodmanSandbox (SOUL §20).
+catalerum-exec = { version = "0.1.0", path = "../catalerum-exec" }
+catalerum-fetch = { version = "0.1.0", path = "../catalerum-fetch", default-features = false }
+catalerum-graph = { version = "0.1.0", path = "../catalerum-graph" }
+catalerum-iam = { version = "0.1.0", path = "../catalerum-iam" }
+# The safe Datalog query language the `POST /graph/query` route parses + evaluates
+# in-process over a workspace's loaded facts (SOUL §6.3/§18).
+catalerum-logic = { version = "0.1.0", path = "../catalerum-logic" }
+catalerum-ingest = { version = "0.1.0", path = "../catalerum-ingest" }
+catalerum-llm = { version = "0.1.0", path = "../catalerum-llm" }
+catalerum-ocr = { version = "0.1.0", path = "../catalerum-ocr" }
+catalerum-mcp = { version = "0.1.0", path = "../catalerum-mcp" }
+# Extension→MIME fallback for previewing a stored object whose backend reported
+# no content type (`GET /storage/preview/{key}`). The render toolchain itself
+# lives in the standalone catalerum-preview-service (reached over HTTP), not here.
+mime_guess = "2"
+# Web-search tool + router + per-user default resolver (SOUL §27). The provider
+# HTTP clients themselves are pulled in (with features) by the binary; the API
+# only needs the always-present `WebSearchTool`/`MultiSearcher`/`SearchDefaults`.
+catalerum-search = { version = "0.1.0", path = "../catalerum-search", default-features = false }
+# Boa-sandboxed JS runner + host bridge for emerged-UI script handlers (SOUL §12).
+catalerum-script = { version = "0.1.0", path = "../catalerum-script" }
+catalerum-storage = { version = "0.1.0", path = "../catalerum-storage" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store" }
+catalerum-vector = { version = "0.1.0", path = "../catalerum-vector" }
+chrono = { version = "0.4.45", features = ["serde"] }
+# IANA timezone database for the `current_time` tool — render "now" in the
+# user's profile timezone (SOUL §22). Same version the automation crate pins.
+chrono-tz = "0.10"
+futures = "0.3.32"
+# Filesystem watcher for the storage watch worker (real-time local store sync, §9/§10).
+notify = "9.0.0-rc.4"
+opentelemetry = "0.32.0"
+# Pod-to-pod forwarding client (SOUL §16 M7): plain in-cluster HTTP; the payload
+# itself is AES-256-GCM sealed (`pod_forward`), so no TLS/cert management needed.
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls"] }
+# AEAD for the pod-forward envelope (same primitive as catalerum-store's
+# credential encryption): AES-256-GCM under a master-key-derived subkey.
+ring = "0.17.14"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["full"] }
+tokio-util = "0.7.17"
+tower = "0.5.3"
+tower-http = { version = "0.6.11", features = ["cors", "trace"] }
+tracing = "0.1.44"
+tracing-opentelemetry = "0.33.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.23.3", features = ["v4", "serde"] }
+
+[dev-dependencies]
+# Temp dirs for the terminal-manager ephemeral/persist test.
+tempfile = "3"
+# Used only by config round-trip unit tests; the binary owns runtime TOML parsing.
+toml = "1.1.2"
+# Mock HTTP server for the `notify` tool → channel delivery test (SOUL §25).
+wiremock = "0.6.5"
+# Raw admin connection for per-test DB isolation (`src/test_db.rs`): a `CREATE
+# DATABASE` so worker-draining tests don't share the global `job_queue`.
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }

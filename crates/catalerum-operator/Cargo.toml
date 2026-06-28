@@ -1,0 +1,27 @@
+[package]
+name = "catalerum-operator"
+description = "catalerum: the Kubernetes operator that reconciles WorkspaceSandbox CRs (SOUL §20)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+catalerum-k8s = { version = "0.1.0", path = "../catalerum-k8s" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+serde_yaml = "0.9.34"
+chrono = { version = "0.4.45", features = ["serde"] }
+anyhow = "1.0.100"
+thiserror = "2.0.18"
+futures = "0.3.32"
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+kube = { version = "2.0.1", default-features = false, features = ["runtime", "client", "derive", "rustls-tls"] }
+# kube's `rustls-tls` ships rustls WITHOUT a crypto backend (the app must pick
+# one); ring builds with just a C compiler, so the slim standalone Dockerfile
+# keeps working. Installed process-wide in main before the client is built.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+k8s-openapi = { version = "0.26.1", default-features = false, features = ["v1_30"] }
+schemars = "1"

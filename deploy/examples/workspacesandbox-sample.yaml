@@ -1,0 +1,19 @@
+apiVersion: catalerum.dev/v1alpha1
+kind: WorkspaceSandbox
+metadata:
+  name: catalerum-ws-00000000-0000-0000-0000-000000000001
+  namespace: catalerum-system
+spec:
+  workspaceId: "00000000-0000-0000-0000-000000000001"
+  # The batteries-included sandbox image (Dockerfile `runtime-sandbox`); omit to
+  # fall back to the operator default (bare debian:stable-slim).
+  image: registry.k3s.s.fionn-router.internal/catalerum/catalerum-sandbox:latest
+  workVolumeSize: 5Gi
+  networkPolicy: Full
+  # Scale the pod to 0 after 30m idle (the /work PVC persists); never hard-delete.
+  idleTtlSeconds: 1800
+  hardTtlSeconds: 0
+  cpuRequest: "250m"
+  cpuLimit: "2"
+  memoryRequest: "256Mi"
+  memoryLimit: "2Gi"

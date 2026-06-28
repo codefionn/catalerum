@@ -1,0 +1,54 @@
+[package]
+name = "catalerum"
+description = "catalerum: binary — load config, wire services, run API + workers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+default-run = "catalerum"
+
+[[bin]]
+name = "catalerum"
+path = "src/main.rs"
+
+[features]
+# Forward the catalerum-fetch browser/CDP backend (off by default; it pulls in a
+# WebSocket stack). Build with `cargo build -p catalerum --features browser`.
+browser = ["catalerum-fetch/browser"]
+# Native SQLite source-of-truth backend for the single-node all-in-one image.
+# The regular binary remains PostgreSQL when this is not enabled.
+sqlite = ["catalerum-store/sqlite", "catalerum-api/sqlite"]
+
+[dependencies]
+anyhow = "1.0.102"
+async-trait = "0.1.89"
+base64 = "0.22"
+catalerum-api = { version = "0.1.0", path = "../catalerum-api" }
+catalerum-backup = { version = "0.1.0", path = "../catalerum-backup" }
+catalerum-bus = { version = "0.1.0", path = "../catalerum-bus" }
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+catalerum-exec = { version = "0.1.0", path = "../catalerum-exec" }
+catalerum-fetch = { version = "0.1.0", path = "../catalerum-fetch", default-features = false, features = ["http", "firecrawl"] }
+catalerum-graph = { version = "0.1.0", path = "../catalerum-graph" }
+# All six search providers (SOUL §27); each activates only when configured.
+catalerum-search = { version = "0.1.0", path = "../catalerum-search" }
+catalerum-iam = { version = "0.1.0", path = "../catalerum-iam" }
+catalerum-ingest = { version = "0.1.0", path = "../catalerum-ingest" }
+catalerum-llm = { version = "0.1.0", path = "../catalerum-llm" }
+catalerum-mcp = { version = "0.1.0", path = "../catalerum-mcp" }
+# The real CodeRunner (Boa-sandboxed JS) for node-graph Code/Condition nodes
+# (SOUL §11 Phase B), installed on the worker's automation context below.
+catalerum-script = { version = "0.1.0", path = "../catalerum-script" }
+catalerum-skills = { version = "0.1.0", path = "../catalerum-skills" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store" }
+catalerum-vector = { version = "0.1.0", path = "../catalerum-vector" }
+clap = { version = "4.6.1", features = ["derive"] }
+opentelemetry = "0.32.0"
+opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["trace", "http-proto", "reqwest-client", "reqwest-rustls"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["trace"] }
+serde = "1.0.228"
+tokio = { version = "1.52.3", features = ["full"] }
+toml = "1.1.2"
+tracing = "0.1.44"
+tracing-opentelemetry = "0.33.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

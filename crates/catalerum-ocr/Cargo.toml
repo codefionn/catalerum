@@ -1,0 +1,20 @@
+[package]
+name = "catalerum-ocr"
+description = "catalerum: OcrEngine trait impls — Mistral-style /v1/ocr API client + offline tesseract CLI fallback, composed by a fallback chain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+base64 = "0.22"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tokio = { version = "1.52.3", features = ["rt", "macros", "process", "io-util", "time"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["full"] }

@@ -1,0 +1,28 @@
+# Keep the build context small + reproducible.
+.git
+.gitignore
+target
+**/target
+dist
+crates/catalerum-web/dist
+node_modules
+**/node_modules
+e2e/node_modules
+test-results
+playwright-report
+*.log
+.env
+# Root scratch binaries produced by ad-hoc runs (see .gitignore `/test_*`).
+test_*
+# 1 MB planning doc — not needed to build.
+SOUL.md
+.claude
+# Docker/CI machinery itself — editing it must not bust the COPY . . layer.
+# (BuildKit reads Dockerfile + .dockerignore out-of-band, not from the context.)
+Dockerfile
+**/Dockerfile
+docker-bake.hcl
+docker-compose*.yml
+.dockerignore
+.gitlab-ci.yml
+.gitlab

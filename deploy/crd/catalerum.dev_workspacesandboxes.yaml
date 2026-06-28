@@ -1,0 +1,171 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: workspacesandboxes.catalerum.dev
+spec:
+  group: catalerum.dev
+  names:
+    categories: []
+    kind: WorkspaceSandbox
+    plural: workspacesandboxes
+    shortNames:
+    - wsb
+    singular: workspacesandbox
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.podName
+      name: Pod
+      type: string
+    - jsonPath: .spec.workspaceId
+      name: Workspace
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for WorkspaceSandboxSpec via `CustomResource`
+        properties:
+          spec:
+            description: |-
+              Desired state of a workspace's sandbox. The operator owns the cluster objects;
+              the API owns `status.lastActivity` (which drives idle GC).
+            properties:
+              cpuLimit:
+                description: CPU limit, e.g. `"2"`.
+                nullable: true
+                type: string
+              cpuRequest:
+                description: CPU request, e.g. `"500m"` (`None` → operator default).
+                nullable: true
+                type: string
+              env:
+                additionalProperties:
+                  type: string
+                description: Extra environment for the sandbox container.
+                type: object
+              hardTtlSeconds:
+                default: 0
+                description: |-
+                  Hard-delete the whole sandbox (namespace + PVC) after this many idle
+                  seconds (`0` → never).
+                format: uint64
+                minimum: 0.0
+                type: integer
+              idleTtlSeconds:
+                default: 0
+                description: |-
+                  Scale the Pod to 0 after this many idle seconds (`0` → never). `/work`
+                  persists; the API's `lastActivity` patch resumes it.
+                format: uint64
+                minimum: 0.0
+                type: integer
+              image:
+                description: Container image; `None` → the operator default (`debian:stable-slim`).
+                nullable: true
+                type: string
+              memoryLimit:
+                description: Memory limit, e.g. `"1Gi"`.
+                nullable: true
+                type: string
+              memoryRequest:
+                description: Memory request, e.g. `"256Mi"`.
+                nullable: true
+                type: string
+              networkPolicy:
+                default: Full
+                description: Network posture (default `Full`).
+                enum:
+                - Full
+                - Isolated
+                type: string
+              paused:
+                default: false
+                description: Pause reconciliation (the operator leaves objects untouched).
+                type: boolean
+              storageClass:
+                description: StorageClass for the `/work` PVC (`None` → the cluster default).
+                nullable: true
+                type: string
+              workVolumeSize:
+                description: Persistent `/work` PVC size, e.g. `"10Gi"`.
+                type: string
+              workspaceId:
+                description: Workspace UUID (lowercased). Drives the namespace/PVC/Deployment names.
+                type: string
+            required:
+            - workVolumeSize
+            - workspaceId
+            type: object
+          status:
+            description: Observed state of a workspace sandbox.
+            nullable: true
+            properties:
+              conditions:
+                items:
+                  description: A status condition (mirrors the k8s convention).
+                  properties:
+                    lastTransitionTime:
+                      description: RFC3339 timestamp.
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      description: '`True` / `False` / `Unknown`.'
+                      type: string
+                    type:
+                      description: e.g. `Ready`, `PvcBound`, `NetworkPolicyApplied`.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastActivity:
+                description: RFC3339 timestamp the API stamps on each exec/attach (drives idle GC).
+                nullable: true
+                type: string
+              namespace:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                nullable: true
+                type: integer
+              phase:
+                default: Pending
+                description: Reconcile phase.
+                enum:
+                - Pending
+                - Provisioning
+                - Ready
+                - Suspended
+                - Terminating
+                - Failed
+                type: string
+              podName:
+                nullable: true
+                type: string
+              pvcName:
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: WorkspaceSandbox
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+

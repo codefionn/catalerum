@@ -1,0 +1,27 @@
+[package]
+name = "catalerum-backup"
+description = "catalerum: disaster-recovery backup + restore — Postgres logical dump + object blobs → an S3 / WebDAV / local destination (SOUL §30)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+catalerum-bus = { version = "0.1.0", path = "../catalerum-bus" }
+async-trait = "0.1.89"
+chrono = { version = "0.4.45", features = ["serde"] }
+flate2 = "1.0"
+futures = "0.3.31"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.10"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+catalerum-storage = { version = "0.1.0", path = "../catalerum-storage" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store" }
+tempfile = "3.16.0"
+uuid = { version = "1.23.3", features = ["v4"] }

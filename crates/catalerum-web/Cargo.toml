@@ -1,0 +1,78 @@
+[package]
+name = "catalerum-web"
+description = "catalerum: Leptos workbench (wasm CSR)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+
+# Trunk builds the wasm CSR bundle from a `cdylib`; `rlib` is kept so the
+# crate's unit tests still compile/run natively (`cargo test -p catalerum-web`).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The shared streaming Markdown engine — HTML + Leptos renderers, mermaid, and a
+# SIMD scanner that compiles to wasm. The `leptos` feature turns on the
+# `markdown → View` renderer used for streaming chat replies.
+catalerum-markdown = { path = "../catalerum-markdown", features = ["leptos"] }
+console_error_panic_hook = "0.1.7"
+futures = "0.3.32"
+gloo-net = { version = "0.7.0", features = ["websocket", "http"] }
+gloo-timers = "0.4.0"
+# `js-sys` (typed-array bridge) + `wasm-bindgen-futures` (`JsFuture`) back the
+# Files panel's upload path: read a picked `File`'s bytes (a JS `Promise`) and
+# `PUT` them as a `Uint8Array` body. Both are already in the dependency graph
+# (transitive via web-sys/leptos); declared here so we can call them directly.
+js-sys = "0.3.102"
+leptos = { version = "0.8.3", features = ["csr"] }
+leptos_router = "0.8.3"
+# Material Design SVG strings used by the shared icon component. It only uses
+# the ICON_* string constants, so the framework integration is unnecessary.
+md-icons = { version = "0.4.0", default-features = false }
+serde = "1.0.228"
+serde_json = "1.0.150"
+wasm-bindgen = "0.2.125"
+wasm-bindgen-futures = "0.4"
+# Features enable the browser bindings this crate calls directly: the dev
+# magic-link token plumbing (`Window`/`Storage`/`Location`), a per-panel
+# conversation id (`Crypto::random_uuid`), and the Files panel's file-upload
+# control (`<input type=file>` → `File`/`Blob` byte read). The base `web-sys`
+# dependency was already declared by Scaffold; this only turns on feature gates.
+web-sys = { version = "0.3.102", features = [
+    "Window", "Storage", "Location", "History", "Crypto", "Document",
+    "Event", "EventTarget", "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement",
+    "MouseEvent",
+    "FileList", "File", "Blob",
+    # The §11 Phase C flow editor's SVG canvas: pointer events drive
+    # drag/connect/pan, node-position math reads the <svg> root's on-screen
+    # origin via `Element::get_bounding_client_rect` (a `DomRect`), and
+    # `WheelEvent` drives zoom-to-cursor.
+    "PointerEvent", "Element", "DomRect", "SvgElement", "SvgsvgElement", "WheelEvent",
+    # The MCP-clients settings page's copy-to-clipboard buttons
+    # (`navigator.clipboard.writeText`).
+    "Navigator", "Clipboard",
+    # Emerged-UI infinite scroll: a viewport IntersectionObserver on a bottom
+    # sentinel reveals another page as the user scrolls (`for_each` pagination).
+    "IntersectionObserver", "IntersectionObserverEntry",
+    # The chat composer's microphone dictation (SOUL §7): capture the mic
+    # (`Navigator::media_devices` → `getUserMedia`), record with `MediaRecorder`
+    # (its `BlobEvent` chunks combined into a `Blob` and POSTed to
+    # `/audio/transcriptions`), release the mic via each `MediaStreamTrack`, and
+    # drive a voice-activity auto-stop off an `AnalyserNode` fed by a
+    # `MediaStreamAudioSourceNode` on an `AudioContext`.
+    "MediaDevices", "MediaStream", "MediaStreamTrack", "MediaStreamConstraints",
+    "MediaRecorder", "RecordingState", "BlobEvent",
+    "AudioContext", "BaseAudioContext", "AudioNode", "AnalyserNode",
+    "MediaStreamAudioSourceNode",
+    # The voice-conversation overlay's TTS playback (SOUL §7/§12): decode the
+    # `/ws/speech` audio bytes (`BaseAudioContext::decode_audio_data` →
+    # `AudioBuffer`), play through an `AudioBufferSourceNode` (start/onended on
+    # its `AudioScheduledSourceNode` base) into the context's destination, tapped
+    # by the already-enabled `AnalyserNode` for the sound-reactive orb.
+    "AudioBuffer", "AudioBufferSourceNode", "AudioScheduledSourceNode",
+    "AudioDestinationNode",
+] }

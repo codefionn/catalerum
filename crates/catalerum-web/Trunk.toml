@@ -1,0 +1,55 @@
+# Trunk config for the catalerum Leptos CSR workbench (SOUL §12).
+# Build:  trunk build
+# Serve:  trunk serve   (used by `just dev`)
+
+[build]
+target = "index.html"
+dist = "dist"
+
+[serve]
+# Dev server for the web workbench; the API proxies/serves alongside it.
+address = "0.0.0.0"
+port = 8080
+
+# Forward the SPA's relative API + WebSocket calls to the catalerum API during
+# `trunk serve`.
+#
+# The API mounts its routes at the ROOT — `/ws/chat`, `/conversations`,
+# `/auth/magic`, `/healthz` — there is NO `/api` prefix (the old backend value
+# `…/api` was wrong and pointed at routes that don't exist). Trunk nests each
+# proxy under its backend URL's *path*: a request under that path is matched,
+# the prefix is stripped, then the same backend path is re-prepended on the way
+# out (see trunk `make_outbound_uri`). So `backend = ".../ws"` listens on `/ws`
+# and forwards `/ws/chat` → `http://localhost:8787/ws/chat` unchanged. We scope
+# each proxy to a real API prefix so `trunk serve` keeps serving the SPA assets
+# from `/` and only these prefixes go to the API.
+
+# WebSocket chat: `/ws/chat`.
+[[proxy]]
+backend = "ws://localhost:8787/ws"
+ws = true
+
+# REST conversations: `/conversations`, `/conversations/{id}`, `…/messages`.
+[[proxy]]
+backend = "http://localhost:8787/conversations"
+
+# Dev magic-link redeem: `/auth/magic`.
+[[proxy]]
+backend = "http://localhost:8787/auth"
+
+# Health probe: `/healthz`.
+[[proxy]]
+backend = "http://localhost:8787/healthz"
+
+# Calendar REST (M2): connections CRUD + sync — `/connections`,
+# `/connections/{id}/sync`.
+[[proxy]]
+backend = "http://localhost:8787/connections"
+
+# Calendar REST (M2): `/calendars`.
+[[proxy]]
+backend = "http://localhost:8787/calendars"
+
+# Calendar REST (M2): `/events` (with optional `?from=&to=&calendar_id=`).
+[[proxy]]
+backend = "http://localhost:8787/events"

@@ -1,0 +1,131 @@
+# catalerum backing services for local dev (SOUL §17).
+# Postgres is the source of truth; Neo4j, Qdrant, and Valkey are derived/ephemeral;
+# RustFS is an S3-compatible object store backing the [storage] backend (SOUL §9).
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16
+    container_name: catalerum-postgres
+    environment:
+      POSTGRES_DB: catalerum
+      POSTGRES_USER: catalerum
+      POSTGRES_PASSWORD: catalerum
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalerum -d catalerum"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: docker.io/library/neo4j:5
+    container_name: catalerum-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/catalerum
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: docker.io/valkey/valkey
+    container_name: catalerum-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: docker.io/qdrant/qdrant
+    container_name: catalerum-qdrant
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # RustFS — S3-compatible object storage (a Rust MinIO alternative), the dev
+  # default for catalerum's [storage.s3] backend. S3 API on :9000, console on
+  # :9001 (rustfsadmin/rustfsadmin). Single-volume single-node mode for dev.
+  rustfs:
+    image: docker.io/rustfs/rustfs:latest
+    container_name: catalerum-rustfs
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # llmleaf — the OpenAI-compatible LLM proxy catalerum's chat / embedding /
+  # speech turns are sent to (SOUL §7). Pulled from quay.io as a published
+  # container instead of built from a sibling checkout. Serves the consumer
+  # endpoint on :8088 (catalerum's [llm].base_url). The mounted config defaults to
+  # the committed key-free "echo" route so chat works offline / in CI with no API
+  # keys; point LLMLEAF_CONFIG at a real-provider config (e.g. the gitignored
+  # config/llmleaf.prod.toml) to use live providers, and LLMLEAF_IMAGE to pin a
+  # different image/tag. The scratch image ships no shell, so there is no
+  # healthcheck — the binary binds near-instantly. Config resolves from the CLI
+  # arg passed as `command`.
+  llmleaf:
+    image: ${LLMLEAF_IMAGE:-quay.io/codefionn/llmleaf:0.2.5}
+    container_name: catalerum-llmleaf
+    command: ["/etc/llmleaf/llmleaf.toml"]
+    # Forward provider API keys from the host into the container. A real-provider
+    # config (config/llmleaf.prod.toml) declares `credential = "env:OPENROUTER_API_KEY"`
+    # (and the like), which llmleaf resolves from THIS container's process env — not
+    # the host's. Without this passthrough the bearer is empty and the upstream 401s
+    # ("No cookie auth credentials found"). Bare `- VAR` form: an unset host var is
+    # left unset in the container (matching llmleaf's "absent env: ⇒ no auth" path),
+    # so the key-free echo dev config still runs with none of these set.
+    environment:
+      - OPENROUTER_API_KEY
+      - MISTRAL_API_KEY
+      - CEREBRAS_API_KEY
+    # Long-form bind mount (not the `src:dst:ro` short form): podman-compose only
+    # treats a source starting with `.`/`/` as a path, so a relative LLMLEAF_CONFIG
+    # like `config/llmleaf.dev.toml` would otherwise be misread as a named volume.
+    volumes:
+      - type: bind
+        source: ${LLMLEAF_CONFIG:-./config/llmleaf.dev.toml}
+        target: /etc/llmleaf/llmleaf.toml
+        read_only: true
+    ports:
+      - "8088:8088"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  neo4j-data:
+  valkey-data:
+  qdrant-data:
+  rustfs-data:

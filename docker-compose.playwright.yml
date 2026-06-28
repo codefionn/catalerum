@@ -1,0 +1,52 @@
+# Containerized Playwright runner for the e2e specs (SOUL §17). This replaces
+# only the LOCAL `npx playwright test` step — the API (:8787) and web workbench
+# (:8080) still run on the HOST (the compiled SPA hardcodes
+# http://localhost:8787 as its API base, see crates/catalerum-web/src/api.rs),
+# so the runner joins the host network namespace instead of a bridge network:
+# `localhost` inside the container IS the host, and the browser reaches both
+# origins (plus the published backing-store ports) unchanged.
+#
+# The image tag MUST match the exact @playwright/test version pinned in
+# e2e/package.json — browsers are baked into the image per-version, and a
+# drifted npm resolve aborts with "browser not found". Bump the two together
+# (override PLAYWRIGHT_IMAGE to test another tag without editing this file).
+#
+# Run via `just e2e-docker` (boots API + web and mints the dev session first),
+# or standalone against an already-running `just dev` + `just web`:
+#   CATALERUM_DEV_AUTHORIZATION_TOKEN=<token> \
+#     podman compose -f docker-compose.playwright.yml run --rm playwright
+
+services:
+  playwright:
+    image: ${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.61.1-noble}
+    network_mode: host
+    # Chromium needs the host IPC namespace so it doesn't crash on the
+    # container's tiny default /dev/shm (per the Playwright container docs).
+    ipc: host
+    working_dir: /work/e2e
+    # Bare form: a var unset on the host stays unset in the container, so the
+    # session-gated specs self-skip honestly instead of seeing "".
+    environment:
+      - CATALERUM_DEV_AUTHORIZATION_TOKEN
+      - CATALERUM_MAGIC_TOKEN
+      - CATALERUM_WEB_URL
+      - CATALERUM_API_URL
+      - CATALERUM_ALL_IN_ONE_URL
+      - PLAYWRIGHT_CONFIG
+      - CI
+    # The specs come straight from the host bind, so edits need no rebuild;
+    # node_modules is a named volume overlaying the bind so the container's
+    # install never collides with a host-side e2e/node_modules (and test
+    # results/traces still land on the host under e2e/test-results).
+    volumes:
+      - type: bind
+        source: ./e2e
+        target: /work/e2e
+      - playwright-node-modules:/work/e2e/node_modules
+    # npm install is near-instant once the node_modules volume is warm, and
+    # running it every time keeps the volume in step with the package.json pin.
+    command:
+      ["bash", "-c", "npm install --no-package-lock && npx playwright test --config ${PLAYWRIGHT_CONFIG:-playwright.config.ts}"]
+
+volumes:
+  playwright-node-modules:

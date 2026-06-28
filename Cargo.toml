@@ -1,0 +1,79 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/catalerum-core",
+    "crates/catalerum-markdown",
+    "crates/catalerum-store",
+    "crates/catalerum-graph",
+    "crates/catalerum-logic",
+    "crates/catalerum-vector",
+    "crates/catalerum-bus",
+    "crates/catalerum-llm",
+    "crates/catalerum-iam",
+    "crates/catalerum-calendar",
+    "crates/catalerum-storage",
+    "crates/catalerum-email",
+    "crates/catalerum-exec",
+    "crates/catalerum-skills",
+    "crates/catalerum-channels",
+    "crates/catalerum-fetch",
+    "crates/catalerum-search",
+    "crates/catalerum-ocr",
+    "crates/catalerum-preview",
+    "crates/catalerum-ingest",
+    "crates/catalerum-automation",
+    "crates/catalerum-script",
+    "crates/catalerum-backup",
+    "crates/catalerum-api",
+    "crates/catalerum-mcp",
+    "crates/catalerum-k8s",
+    "crates/catalerum-operator",
+    "crates/catalerum-agent",
+    "crates/catalerum-web",
+    "crates/catalerum",
+    "crates/catalerum-all-in-one",
+]
+
+# catalerum-web targets wasm32 (Leptos CSR via Trunk); exclude it from the
+# default native build so `cargo check`/`cargo build` and `just check` stay
+# green without a wasm target. Build it explicitly:
+#   cargo check -p catalerum-web --target wasm32-unknown-unknown
+default-members = [
+    "crates/catalerum-core",
+    "crates/catalerum-markdown",
+    "crates/catalerum-store",
+    "crates/catalerum-graph",
+    "crates/catalerum-logic",
+    "crates/catalerum-vector",
+    "crates/catalerum-bus",
+    "crates/catalerum-llm",
+    "crates/catalerum-iam",
+    "crates/catalerum-calendar",
+    "crates/catalerum-storage",
+    "crates/catalerum-email",
+    "crates/catalerum-exec",
+    "crates/catalerum-skills",
+    "crates/catalerum-channels",
+    "crates/catalerum-fetch",
+    "crates/catalerum-search",
+    "crates/catalerum-ocr",
+    "crates/catalerum-preview",
+    "crates/catalerum-ingest",
+    "crates/catalerum-automation",
+    "crates/catalerum-script",
+    "crates/catalerum-backup",
+    "crates/catalerum-api",
+    "crates/catalerum-mcp",
+    "crates/catalerum-k8s",
+    "crates/catalerum-operator",
+    "crates/catalerum-agent",
+    "crates/catalerum",
+    "crates/catalerum-all-in-one",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://codefionn.eu/catalerum"
+rust-version = "1.85"

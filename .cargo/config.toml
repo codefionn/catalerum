@@ -1,0 +1,13 @@
+# Enable WebAssembly SIMD (128-bit) for every wasm32 build in the workspace.
+#
+# `catalerum-markdown`'s byte scanner has a `simd128` fast path (the nibble-table
+# membership test, see `scan.rs`); turning the target feature on lets the wasm
+# workbench use it instead of the scalar fallback. All current evergreen browsers
+# support wasm SIMD (Chrome 91+, Firefox 89+, Safari 16.4+), which is the
+# workbench's target. Scoped to the wasm target, so native builds are untouched.
+#
+# This config lives at the workspace root so it applies whether cargo is invoked
+# from here (`just check-web`, `just lint`) or from the crate dir (`just web` →
+# Trunk), since Cargo merges config from the CWD up to the workspace root.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

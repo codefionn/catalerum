@@ -1,0 +1,15 @@
+# The API CRUDs WorkspaceSandbox CRs (+ status) only in the management namespace;
+# its per-workspace pods/exec rights are granted dynamically by the operator in
+# each catalerum-ws-<id> namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: catalerum-api-wsb
+  namespace: catalerum-system
+rules:
+  - apiGroups: ["catalerum.dev"]
+    resources: ["workspacesandboxes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["catalerum.dev"]
+    resources: ["workspacesandboxes/status"]
+    verbs: ["get", "update", "patch"]

@@ -1,0 +1,38 @@
+[package]
+name = "catalerum-fetch"
+description = "catalerum: WebFetcher trait impls — HTTP / headless browser (CDP·Playwright) / Firecrawl — with HTML→Markdown for cheap AI context"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Local-first defaults: plain-HTTP fetching + the always-available HTML→Markdown
+# converter, plus the Firecrawl client (a thin HTTP client, no heavy deps).
+default = ["http", "firecrawl"]
+# Plain reqwest GET backend (local-first, no JavaScript).
+http = ["dep:reqwest"]
+# Firecrawl scrape API client (self-hosted or cloud). Returns Markdown directly.
+firecrawl = ["dep:reqwest"]
+# Headless-browser control over the Chrome DevTools Protocol (drives Chromium /
+# Playwright `launchServer` / Browserless). Heavier; off by default.
+browser = ["dep:tokio-tungstenite", "dep:futures-util"]
+
+[dependencies]
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+ego-tree = "0.11.0"
+futures = "0.3.32"
+scraper = "0.27.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["rt", "macros", "time", "net", "sync"] }
+tracing = "0.1.44"
+url = "2.5.8"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls", "gzip"], optional = true }
+tokio-tungstenite = { version = "0.29.0", optional = true, features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3.32", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["full"] }

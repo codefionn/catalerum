@@ -1,0 +1,25 @@
+[package]
+name = "catalerum-channels"
+description = "catalerum: Matrix / Telegram / Discord / Slack channels — deliver + receive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+futures = "0.3.32"
+# Outbound delivery (a Discord/Slack incoming webhook) is a plain HTTPS POST;
+# `query` builds the inbound long-poll URLs (Matrix `/sync`, Telegram `getUpdates`).
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+# `time` for the receive loop's error backoff (`tokio::time::sleep`); the
+# inbound long-poll streams ([`Channel::subscribe`]) need it.
+tokio = { version = "1.52.3", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6.5"

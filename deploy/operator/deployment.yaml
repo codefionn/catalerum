@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalerum-operator
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalerum-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalerum-operator
+    spec:
+      serviceAccountName: catalerum-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: operator
+          image: catalerum-operator:dev
+          args: ["run"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: RUST_LOG
+              value: "info,catalerum_operator=debug"
+            # Exec-grant subject: the ServiceAccount (+ its namespace) the API pods
+            # run as. Defaults to catalerum-api in catalerum-system (deploy/api-rbac);
+            # override when the API is deployed in its own app namespace.
+            # - name: CATALERUM_API_SERVICE_ACCOUNT
+            #   value: catalerum-api
+            # - name: CATALERUM_API_NAMESPACE
+            #   value: catalerum
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

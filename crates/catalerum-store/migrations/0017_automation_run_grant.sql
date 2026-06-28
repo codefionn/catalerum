@@ -1,0 +1,15 @@
+-- catalerum-store — §19 audit: record which grant authorized each automation run.
+--
+-- An automation runs under its `grant_id`'s capabilities (SOUL §19). This column
+-- SNAPSHOTS that grant onto each run so the audit trail answers "which grant was
+-- in force for THIS execution" — a forensic fact, not a live link.
+--
+-- Deliberately NO foreign key (unlike `automations.grant_id`): an audit record
+-- must survive the grant's deletion. If a grant is later removed, the automation's
+-- live `grant_id` is nulled (its composite FK's ON DELETE SET NULL), but every
+-- historical run KEEPS the id it actually ran under — deleting a grant must never
+-- rewrite history. The only writer (`start_run`) sources this from
+-- `automations.grant_id`, which is itself FK-checked, so a written value is a real
+-- grant id at write time; durability of the fact outranks write-time referential
+-- enforcement here. NULL = the run had no grant (ran under default base authority).
+ALTER TABLE automation_runs ADD COLUMN grant_id UUID;
