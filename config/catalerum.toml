@@ -1,0 +1,603 @@
+# catalerum default configuration (SOUL §13).
+#
+# TOML config is the immutable base: service endpoints, the llmleaf endpoint + key
+# + per-modality models (chat/embedding/speech/transcription), default Executor
+# backend, base capability policy, and the
+# auth/SSO + dev-login toggle. Runtime-mutable state (workspaces, agents, grants,
+# notes, tasks, skills, channels, automations) layers on via the API.
+#
+# Provider credentials are stored encrypted and referenced by `credential_ref`,
+# never in plaintext here.
+
+[server]
+# Deployment mode (SOUL §18): "single_user" | "multi_user". Presentation, defaults,
+# and optimizations only — never schema/API/authz/tenancy (a single-user instance is
+# a multi-tenant instance with one human; flipping the mode is a config edit, not a
+# migration). "single_user" (what `just dev` runs) surfaces full per-user settings
+# depth, hides member/role/SSO chrome, and auto-selects the default org/workspace;
+# "multi_user" shows member management + SSO and curated admin defaults. Unset ⇒
+# single_user. Creation policies default `members` (single_user) vs `admins` (multi_user).
+mode = "single_user"
+# Instance policy: who may create NEW organisations ("disabled" | "admins" | "members").
+# Deny-by-default (SOUL §18). Unset ⇒ the deployment mode's default (members in
+# single_user, admins in multi_user). The creator becomes the organisation's Owner.
+# organisation_creation = "members"
+# Address the Axum API listens on.
+listen = "0.0.0.0:8787"
+# Public URL of the Leptos web workbench (the SPA origin, served by `trunk serve`).
+# The dev magic-link redeem endpoint 302-redirects here with the session token so
+# dev login is a single click (SOUL §17). Override for a different SPA origin.
+web_url = "http://localhost:8080"
+# Secret that signs `download_link` tokens (SOUL §9) — the short-lived, single-file
+# (or directory) links the agent hands the user (`GET /download/{token}`). Set it so
+# links survive a restart and verify across pods; leave it unset and each process
+# signs with a fresh random key (links then die with the process — fine for dev).
+# download_secret = "change-me-to-a-long-random-string"
+# Secret that signs trigger-fire links (SOUL §11/§12) — the short-lived public URLs
+# (`POST /triggers/fire/{token}`) an external service uses to fire one named automation
+# signal without a login (minted by the `trigger_link` tool / `POST /triggers/mint/{name}`).
+# Set it so links survive a restart and verify across pods; unset ⇒ a fresh random key
+# per process (links then die with the process). Independent of download_secret.
+# trigger_secret = "change-me-to-a-long-random-string"
+
+[database]
+# Postgres — the single source of truth. All writes funnel through here.
+url = "postgres://catalerum:catalerum@localhost:5432/catalerum"
+
+[valkey]
+# Ephemeral coordination, token-stream relay, and Streams work dispatch.
+# Disable to fall back to the single-pod Postgres FOR UPDATE SKIP LOCKED path.
+url = "redis://localhost:6379"
+enabled = true
+
+[neo4j]
+# Derived multi-hop graph projection; fully rebuildable from Postgres.
+# catalerum-graph drives Neo4j's HTTP transactional API (port 7474), not Bolt.
+url = "http://localhost:7474"
+user = "neo4j"
+password = "catalerum"
+database = "neo4j"
+# Enable the project-to-graph worker (notes → :Note + :Topic nodes, SOUL §6.3/§10).
+# Off by default; flip on once Neo4j is up.
+enabled = false
+
+[qdrant]
+# Derived semantic vector index; fully rebuildable from Postgres chunks/memories.
+url = "http://localhost:6333"
+# Enable the embed→upsert ingest worker (notes → chunks → llmleaf embed → Qdrant,
+# SOUL §6.4/§10). Off by default; flip on once Qdrant + an embedding model are up.
+# The collection's vector width is discovered from the embedding model.
+enabled = false
+
+[curation]
+# Background memory auto-curation (SOUL §22): after each chat turn, an LLM mines
+# the conversation for durable facts and stores the new ones as memories. Off by
+# default. `model` is empty → falls back to [llm].default_model.
+enabled = false
+model = ""
+
+[exec]
+# Command/code execution (SOUL §20). PROTECTED + opt-in. When enabled, the binary
+# builds a local executor and registers the `run_command` tool — which still
+# requires the `exec:run` capability (no base role grants it, §19). `allow`
+# restricts which programs may run (empty = any, still capability-gated). The
+# Local backend runs on the host (highest blast radius); prefer it only in trusted
+# dev. Off by default.
+enabled = true
+allow = []
+# Per-workspace sandbox (SOUL §20): with the container/kubernetes backend, run ONE
+# long-lived secure sandbox per workspace (terminal sessions + run_command exec
+# into it over a shared /work volume) instead of a fresh container per call. Off by
+# default. `backend = "kubernetes"` declares a WorkspaceSandbox CR for the
+# catalerum-operator (deploy/); "container" manages a podman/docker container.
+# per_workspace = false
+# backend = "container"            # local | sandbox | container | kubernetes
+# idle_timeout_secs = 1800         # destroy an idle podman container after N s (0 → 1800)
+# volume_size = "10Gi"             # k8s PVC size for /work (podman volumes are unsized)
+# sandbox_network = ""             # "" → full network; "none"/"isolated" → no internet
+#
+# Sandbox image: unset, both backends fall back to bare debian:stable-slim.
+# CI publishes a batteries-included image (Dockerfile `runtime-sandbox`:
+# python3 + a wide analysis/document/PDF-(de)crypt/HTTP pip stack, headless
+# LibreOffice + pandoc + TeX Live + poppler/qpdf/ghostscript + openssl +
+# git/jq/rg/sqlite, non-root uid 1000) — point the backend in use at it:
+# [exec.k8s]
+# image = "registry.k3s.s.fionn-router.internal/catalerum/catalerum-sandbox:latest"
+# [exec.podman]
+# image = "registry.k3s.s.fionn-router.internal/catalerum/catalerum-sandbox:latest"
+
+[llm]
+# llmleaf is multi-modal: chat, embeddings, TTS, and STT all go through this one
+# OpenRouter-shaped endpoint (base_url + bearer) — only the per-modality model
+# differs. In dev this points at the bundled echo-llmleaf (config/llmleaf.dev.toml),
+# whose echo provider serves all four modalities deterministically with no keys.
+# NOTE: give the origin WITHOUT the `/v1` prefix — the llmleaf client appends the
+# versioned path itself (`/v1/chat/completions`, `/v1/embeddings`, …); a `…/v1`
+# here double-prefixes (`/v1/v1/…`) and every LLM call 404s.
+base_url = "http://localhost:8088"
+# Sent verbatim as the bearer; llmleaf decodes it HTTP-Basic-style as
+# base64("catalerum-dev:dev-echo-key"). Both the dev echo config (config/llmleaf.dev.toml)
+# and the gitignored config/llmleaf.prod.toml carry a `catalerum-dev` [[keys]] entry whose
+# pw_hash accepts this exact bearer, so the default below works against either. Harden a real
+# deployment by rotating both sides and injecting the new bearer via CATALERUM_LLM__API_KEY.
+api_key = "Y2F0YWxlcnVtLWRldjpkZXYtZWNoby1rZXk="
+# Opt in to Catalerum-managed dynamic providers/routes. Disabled by default;
+# enable only when llmleaf's [control.topology] points back at this API.
+# control_plane_enabled = true
+default_model = "echo"
+# Embeddings (POST /v1/embeddings) — the vectors feed the Qdrant index (SOUL §6.4).
+embedding_model = "echo"
+# embedding_dimensions = 1536   # omit (or 0) for the provider default
+# Text-to-speech (POST /v1/audio/speech).
+speech_model = "echo"
+speech_voice = "alloy"
+# Speech-to-text (POST /v1/audio/transcriptions).
+transcription_model = "echo"
+# Force-treat these model ids as accepting IMAGE input even when the gateway
+# catalog under-reports their `input_modalities` (SOUL §7/§9) — so chat inlines an
+# uploaded image to them as multimodal content. This is the global/admin layer;
+# each user can also maintain their own list in Settings. Union of both + the
+# catalog decides. Omit for none.
+# image_input_models = ["some-vision-model", "another/model"]
+
+# Distributed tracing. Exporters are independent and may both be enabled. OTLP
+# uses HTTP/protobuf and appends `/v1/traces` to each base endpoint.
+[telemetry]
+service_name = "catalerum"
+sample_ratio = 1.0
+
+[telemetry.otlp]
+enabled = false
+endpoint = "http://localhost:4318"
+# Optional static headers (values are redacted in Debug/log output).
+# headers = { Authorization = "Bearer change-me" }
+# LLM payload policy: "metadata-only" (default),
+# "all-except-system-prompts", or "everything".
+content = "metadata-only"
+
+# Direct Langfuse OTLP/HTTP export. Credentials should normally be injected via
+# CATALERUM_TELEMETRY__LANGFUSE__PUBLIC_KEY / __SECRET_KEY, not committed here.
+[telemetry.langfuse]
+enabled = false
+endpoint = "https://cloud.langfuse.com/api/public/otel" # EU cloud; self-hosted supported
+public_key = ""
+secret_key = ""
+content = "metadata-only"
+
+[ocr]
+# OCR engines (SOUL §7/§10): image (and PDF) objects → searchable text, at
+# ingest and via the `ocr_document` tool / POST /ocr. Engines chain
+# mistral → vision → tesseract; the first configured one that supports a
+# document's type and succeeds serves it. Everything off (the default) keeps
+# the pre-OCR behavior: binary objects catalogue no text.
+# Vision chat model via llmleaf (must advertise `image` input). Deliberately
+# NOT "echo" — the dev echo model would catalogue prompt echoes as document
+# text for every uploaded image.
+# vision_model = "mistralai/pixtral-large"
+# Byte caps: an oversized document is skipped, never truncated.
+# max_image_bytes = 8388608       # 8 MiB
+# max_document_bytes = 33554432   # 32 MiB (PDFs, mistral engine only)
+[ocr.mistral]
+# Dedicated Mistral-dialect OCR API (POST {base_url}/v1/ocr) — the strongest
+# engine, and the only one that takes PDFs. Enabled iff api_key is set; inject
+# it via CATALERUM_OCR__MISTRAL__API_KEY rather than committing it. base_url
+# empty = the Mistral cloud; any compatible self-hosted endpoint plugs in.
+# api_key = ""
+# base_url = ""
+# model = "mistral-ocr-latest"
+[ocr.tesseract]
+# Offline fallback: shells out to a local `tesseract` binary (a runtime
+# dependency — `apt install tesseract-ocr`). Probed at startup; a missing
+# binary or language pack just leaves the engine out of the chain.
+# enabled = true
+# path = "tesseract"
+# languages = "eng"               # tesseract packs, `+`-joined (e.g. "deu+eng")
+
+[executor]
+# Default code/command execution backend. Sandboxed by default; "local" (host)
+# is a protected, opt-in scope only (SOUL §20).
+default_backend = "container"
+
+[fetch]
+# Web fetching & browsing (SOUL §27). Backends convert HTML→Markdown so a page
+# costs the LLM a fraction of its raw context. `backend` is what an `auto` fetch
+# resolves to: "http" (plain GET, local-first default), "browser" (renders JS via
+# an external Chrome/Chromium/Playwright over CDP), or "firecrawl".
+# This section also governs OUTBOUND WEBHOOK DELIVERY (the `send_webhook` tool /
+# `Webhook` automation action, SOUL §11): same egress policy, same SSRF guard —
+# one knob opts fetching and delivering in (or neither).
+backend = "http"
+# Default per-request timeout (seconds) and a cap on response bytes read.
+timeout_secs = 30
+max_bytes = 5242880               # 5 MiB
+# SSRF guard: deny private/loopback targets by default (a protected scope, §19).
+# Turn on ONLY for trusted internal targets behind your firewall. Applies to
+# fetches AND webhook deliveries.
+allow_private_hosts = false
+# user_agent = "Mozilla/5.0 (compatible; catalerum/0.1)"
+
+[fetch.firecrawl]
+# Self-hosted or cloud Firecrawl. Leave base_url empty for the cloud
+# (https://api.firecrawl.dev). Supply the key via the environment, not here:
+#   CATALERUM_FETCH__FIRECRAWL__API_KEY=fc-...
+base_url = ""
+api_key = ""
+
+[fetch.browser]
+# Chrome DevTools Protocol WebSocket of an external browser (headless Chrome
+# `--remote-debugging-port`, a Playwright server, or Browserless). Needs the
+# `browser` build feature: `cargo run -p catalerum --features browser`.
+cdp_url = ""
+
+[search]
+# Web search for the LLM (SOUL §27), exposed as the `web_search` tool. A provider
+# activates only when its credential is set below (for SearXNG, its base_url).
+# `backend` is the provider a search with no explicit `provider` resolves to.
+# Keys are billed infrastructure secrets — supply them via the environment, not
+# here:  CATALERUM_SEARCH__BRAVE__API_KEY=...  (etc.)
+backend = "brave"
+
+[search.brave]
+# Brave Search — independent index. https://brave.com/search/api/
+api_key = ""
+
+[search.tavily]
+# Tavily — LLM/RAG-optimized; returns excerpts + a synthesized answer. https://tavily.com
+api_key = ""
+
+[search.exa]
+# Exa — neural + keyword search. https://exa.ai
+api_key = ""
+
+[search.searxng]
+# SearXNG — self-hosted metasearch; no key. Point at an instance with JSON output
+# enabled, e.g. https://searx.example.org
+base_url = ""
+
+[search.google]
+# Google Programmable Search Engine (CSE) — needs BOTH an API key and an engine id.
+# https://developers.google.com/custom-search/v1/overview
+api_key = ""
+cx = ""
+
+[search.serpapi]
+# SerpAPI — real Google/Bing SERP scrape. https://serpapi.com
+api_key = ""
+engine = "google"
+
+[auth]
+# Zero-config dev login: first run seeds an admin + default workspace and prints
+# a magic-link login URL with a one-time token. Auto-off once real SSO is set up.
+dev_login = true
+
+[sso]
+# Single sign-on — the OIDC FIRST CUT (SOUL §18/§16 M7/§29). §29's open question
+# "OIDC vs SAML to ship first" is resolved: OIDC ships now; SAML is DEFERRED. This
+# is the OpenID Connect Authorization Code flow with PKCE (S256). Leave `issuer` +
+# `client_id` unset (the default) and SSO is OFF — the `/auth/sso/*` routes 404 and
+# dev magic-link login is unaffected. Set both to enable it.
+#
+# The OIDC issuer URL. Discovery reads `{issuer}/.well-known/openid-configuration`;
+# every id_token's `iss` must equal this exactly. Empty ⇒ SSO disabled.
+# issuer = "https://accounts.example.com"
+# The OAuth client id registered with the IdP (also the expected `aud`). Empty ⇒
+# SSO disabled.
+# client_id = "catalerum"
+# The confidential client secret — set via env (CATALERUM_SSO__CLIENT_SECRET=…),
+# never the committed TOML. Sent as client_secret_post (or _basic, see below).
+# client_secret = "set-via-env"
+# The exact redirect URL registered with the IdP. Empty ⇒ derived as
+# `{[server].base_url}/auth/sso/callback`.
+# redirect_url = "https://your-api.example.com/auth/sso/callback"
+# The browser-facing origin of THIS API's /auth/sso/* routes — the web login
+# button navigates to `{public_url}/auth/sso/login`. Set it when the API is not
+# reachable at the SPA's derived `api.<spa-host>` origin (e.g. a Kubernetes
+# ingress on a different domain). Empty ⇒ falls back to `[server].base_url`;
+# with neither set the SPA derives the origin itself.
+# public_url = "https://your-api.example.com"
+# Space-separated scopes. Empty ⇒ "openid email profile".
+# scopes = "openid email profile"
+# JIT provisioning policy: "disabled" (DEFAULT — deny-by-default) or "enabled".
+# When disabled, an SSO login matching no existing user is refused with a friendly
+# 403 (an admin must invite them first). When enabled, a verified-email login with
+# no match creates a fresh user.
+# jit_provisioning = "disabled"
+# The organisation slug a JIT-provisioned user joins (empty ⇒ the default org).
+# JIT users get ORG membership only — NO workspace until an admin adds them
+# (fail-closed): a freshly JIT'd user's first login lands on a "no workspace yet"
+# message rather than into someone else's data.
+# jit_organisation = "default"
+# The org role a JIT-provisioned user receives: owner | admin | member (default).
+# jit_org_role = "member"
+# The workspace slug an SSO user with no live workspace is auto-joined to at login
+# (requires jit_provisioning = "enabled") — the "SSO logins just work" knob. It
+# covers freshly JIT'd users AND previously provisioned ones an admin never placed
+# (and re-admits anyone removed from every workspace, so turn it off to lock a
+# user out below the IdP). If neither this slug nor the default workspace exists
+# yet, the slug is CREATED on first login — a fresh multi_user deployment (dev
+# login off) starts with zero workspaces and would otherwise be impossible to log
+# into at all. An archived target stays fail-closed. Empty ⇒ OFF (fail-closed
+# default): such logins see the "no workspace yet" message until invited.
+# jit_workspace = "default"
+# The workspace role the auto-join grants: owner | admin | member (default) | viewer.
+# jit_workspace_role = "member"
+# Trust the IdP's `email` claim for first-login account linking / JIT even when
+# `email_verified` is absent/false. OFF by default — only a verified email links an
+# SSO identity to an existing local account. Enable only for an IdP you trust to
+# assert emails it doesn't flag as verified.
+# trust_email = false
+# Authenticate at the token endpoint with HTTP Basic (client_secret_basic) instead
+# of the request body (client_secret_post, the default). Set true if your IdP
+# requires Basic.
+# token_auth_basic = false
+# Secret signing the short-lived SSO state cookie (state/nonce/PKCE verifier). Set
+# it (via env) so an in-flight login survives a restart / spans pods; unset ⇒ a
+# fresh random per-process key (fine for single-pod dev). Independent of the
+# download/trigger link secrets.
+# state_secret = "change-me-to-a-long-random-string"
+# Clock-skew leeway (seconds) tolerated on the id_token exp/iat. 0 ⇒ 60s.
+# leeway_secs = 60
+
+[google]
+# Google OAuth (SOUL §16 M7) — one confidential-client app used to connect a user's
+# Google Calendar via the /auth/google/* web flow. Empty client_id ⇒ the routes 404.
+# The per-connection access/refresh tokens are stored ENCRYPTED (needs
+# [secrets].master_key), never here. Requesting offline access + the read-only
+# Calendar scope; Gmail scope is intentionally not requested (the M-stage Gmail
+# provider reads plaintext config, not this encrypted token store).
+# client_id = "xxxxx.apps.googleusercontent.com"
+# The client secret. Set it via env (CATALERUM_GOOGLE__CLIENT_SECRET=…), never the
+# committed TOML.
+# client_secret = "set-via-env"
+# Exact redirect URL registered with Google. Empty ⇒ {[server].base_url}/auth/google/callback.
+# redirect_url = ""
+# Secret signing the short-lived Google-OAuth state cookie (CSRF state + the target
+# workspace/connection). Set it (via env) so an in-flight connect survives a restart /
+# spans pods; unset ⇒ a fresh random per-process key. Independent of the SSO /
+# download / trigger link secrets.
+# state_secret = "change-me-to-a-long-random-string"
+# Opt-in Calendar PUSH notifications (SOUL §8/§16 M7 push half). When true, a
+# background worker registers a Google `events.watch` channel per Google-calendar
+# connection that has an enabled CollectCalendar automation, so a calendar change
+# fires a collect promptly instead of waiting for the poll cadence. OFF by default:
+# it needs a publicly-reachable HTTPS [server].base_url (Google POSTs to
+# {base_url}/webhooks/google/calendar) and [secrets].master_key; with neither the
+# worker no-ops. The poll cadence still runs, so push is purely a latency win.
+# push = false
+# Secret signing the per-channel push token (the X-Goog-Channel-Token Google echoes
+# on every notification — the channel's authorization). Set it (via env,
+# CATALERUM_GOOGLE__PUSH_SECRET=…) so channels created before a restart keep
+# verifying / span pods; unset ⇒ a fresh random per-process key (pre-restart
+# channels' notifications then 404 and fall back to the poll until renewed).
+# Independent of state_secret / the SSO / download / trigger link secrets.
+# push_secret = "change-me-to-a-long-random-string"
+
+[mcp]
+# External MCP servers catalerum connects to AS A CLIENT (SOUL §26). Each
+# [[mcp.servers]] entry spawns a stdio MCP server at startup and folds its tools
+# into the agent's tool registry as `{name}_{tool}`. Every imported tool is gated
+# on the `mcp:use@{name}` capability — a protected scope no base role holds (§19),
+# so remote tools are reachable only by an owner or an explicitly granted agent,
+# exactly like `run_command`. No servers are configured by default.
+#
+# Two transports: "stdio" (default — spawn a local process) or "http" (the
+# streamable-HTTP transport, for a hosted server, with optional auth).
+#
+# Example — Playwright MCP over stdio (browser automation; needs Node):
+# [[mcp.servers]]
+# name = "playwright"
+# transport = "stdio"       # default
+# command = "npx"
+# args = ["@playwright/mcp@latest", "--headless"]
+# enabled = true            # default true; set false to disable without deleting
+# # tools = ["browser_navigate", "browser_click", "browser_snapshot"]  # allow-list (omit = import all)
+# # env = { DISPLAY = ":0" }
+#
+# Example — a hosted MCP server over HTTP/SSE with auth. `kind` selects the mode;
+# put secrets in the environment, e.g.
+#   CATALERUM_MCP__SERVERS__0__AUTH__TOKEN=...
+# [[mcp.servers]]
+# name = "acme"
+# transport = "http"
+# url = "https://mcp.acme.example/mcp"
+# # --- auth (pick one kind) ---
+# [mcp.servers.auth]
+# kind = "bearer"                 # none | bearer | header | oauth2
+# token = ""                      # bearer: Authorization: Bearer <token>
+# # header_name = "X-Api-Key"     # header: a static header
+# # header_value = ""
+# # --- oauth2 (machine-to-machine SSO) ---
+# # kind = "oauth2"
+# # token_url = "https://idp.example/oauth/token"
+# # grant_type = "client_credentials"   # or "refresh_token"
+# # client_id = "..."
+# # client_secret = ""
+# # refresh_token = ""                   # for grant_type = "refresh_token"
+# # scope = "mcp.read mcp.write"
+#
+# catalerum also EXPOSES its own scoped tools as an MCP server via the
+# `catalerum mcp` subcommand — that outbound half needs no config here.
+
+[storage]
+# Object storage (SOUL §9). A workspace can hold MANY storage backends ("stores")
+# so a file chooses where it lives (the Files panel's destination picker / the
+# `?store=` API selector). The top-level fields below configure the DEFAULT store
+# (named "default"); precedence S3 (when [storage.s3] has creds) → WebDAV (when its
+# url is set) → local (local_path). Leave everything empty to disable storage.
+local_path = ""
+# The default store's bucket (the S3 bucket / the name reported in listings).
+bucket = "default"
+# Max upload size in bytes for PUT /storage/objects/* (0 → 64 MiB). Global.
+max_object_bytes = 0
+# Re-scan cadence (seconds) for `watch`-enabled stores: the poll interval for
+# backends with no native change events (S3/WebDAV), and the safety-net cadence for
+# local stores (which also get real-time inotify on top). 0 → 60s; floored at 5s.
+watch_interval_secs = 60
+
+# [storage.s3]        # the default store on S3/MinIO (creds via env in prod)
+# endpoint = "http://localhost:9000"
+# access_key = "minioadmin"
+# secret_key = ""     # set CATALERUM_STORAGE__S3__SECRET_KEY in production
+# path_style = true   # true for MinIO / most self-hosted gateways
+
+# [storage.webdav]    # the default store on WebDAV (Nextcloud, rclone serve)
+# url = "https://cloud.example.org/remote.php/dav/files/me/"
+# username = "me"
+# password = ""       # set CATALERUM_STORAGE__WEBDAV__PASSWORD in production
+
+# Assign the DEFAULT store to specific workspace(s): a list of workspace slugs
+# (case-insensitive) or UUIDs. Empty/omitted = every workspace. Named backends
+# take the same field (see below).
+# workspaces = []
+
+# Additional NAMED backends — each its own store, several of the SAME kind allowed
+# (keyed by name). Users can also add backends at runtime via the Files panel
+# ("Manage storage"); both surface uniformly as selectable stores.
+#
+# A backend can be ASSIGNED to specific workspace(s) with `workspaces` — a list
+# of workspace slugs (case-insensitive) or UUIDs. Empty/omitted = every
+# workspace (the default). An assigned store exists ONLY for the listed
+# workspaces: it resolves (`?store=`), lists in the Files panel, counts as a
+# default, and is watch-scanned only there; everywhere else it 404s as if it
+# were never configured. Entries naming a workspace that doesn't exist yet are
+# inert until it does (workspaces are runtime state; config is the base).
+#
+# [storage.backends.team-a-webdav]        # WebDAV for workspace "team-a" only
+# workspaces = ["team-a"]
+# [storage.backends.team-a-webdav.webdav]
+# url = "https://cloud.example.org/remote.php/dav/files/team-a/"
+# username = "team-a"
+# password = ""
+#
+# [storage.backends.team-b-webdav]        # a second WebDAV, for another workspace
+# workspaces = ["team-b"]                  # (slugs or workspace UUIDs both work)
+# [storage.backends.team-b-webdav.webdav]
+# url = "https://cloud.example.org/remote.php/dav/files/team-b/"
+# username = "team-b"
+# password = ""
+#
+# [storage.backends.archive]            # a second local folder
+# local_path = "/mnt/archive"
+#
+# [storage.backends.docs]               # BROWSE an existing directory as-is
+# local_path = "/home/me/Documents"
+# browse = true   # expose the raw directory — list/read/write its files at their
+#                 # literal keys with NO per-workspace `<workspace_id>/` prefix, so
+#                 # the files already on disk show up in the Files panel. WARNING:
+#                 # a browse store has NO tenant isolation (every workspace sees the
+#                 # same directory) and exposes host paths — single-tenant only.
+#                 # Default false (namespaced, multi-tenant-safe). Also settable on a
+#                 # runtime store via the Files panel ("Browse existing directory").
+# watch = true    # keep the §10 search index in sync as files change: real-time
+#                 # (inotify) for a local folder, periodic (watch_interval_secs) for
+#                 # S3/WebDAV. Indexes pre-existing files on startup. Default false.
+#
+# [storage.backends.minio]              # an S3-compatible store
+# [storage.backends.minio.s3]
+# endpoint = "http://localhost:9000"
+# access_key = "minioadmin"
+# secret_key = ""
+# path_style = true
+#
+# [storage.backends.nextcloud]          # a WebDAV store
+# [storage.backends.nextcloud.webdav]
+# url = "https://cloud.example.org/remote.php/dav/files/me/"
+# username = "me"
+# password = ""
+
+[backup]
+# Disaster-recovery backup (SOUL §30). catalerum's only non-derived state is
+# Postgres (the source of truth) + the object blobs in [storage]; Neo4j + Qdrant
+# are derived/rebuildable and Valkey is ephemeral, so a backup captures Postgres +
+# blobs and a restore reloads them (re-ingest rebuilds the derived stores).
+#
+# `enabled` gates ONLY the scheduled worker — `catalerum backup` / `catalerum
+# restore` work on demand whenever a [backup.destination] is configured. Off by
+# default.
+enabled = false
+# Backup cadence in seconds (0 → 24h; floored to 60s).
+interval_secs = 86400
+# Destination "directory" prefix backups live under.
+prefix = "backups"
+# Retain the newest N backups; older ones are pruned after each run (0 = keep all).
+keep = 7
+# Include the object blobs (SOUL §9) in the backup. false → Postgres-only.
+include_objects = true
+
+# Where backups are written — the SAME shape as [storage], but a SEPARATE backend
+# from the live data so a backup survives the loss of the primary ("to S3 and so
+# on"). Precedence: S3 (when [backup.destination.s3] has creds) → WebDAV (when its
+# url is set) → local (local_path). Leave empty to disable backups.
+[backup.destination]
+# A local directory (the simplest target; good for an attached/rsynced volume).
+local_path = ""
+# Bucket / collection name (the S3 bucket, or the name reported in listings).
+bucket = "catalerum-backups"
+
+[backup.destination.s3]
+# S3 / S3-compatible (MinIO, Backblaze B2, Cloudflare R2, …). Supply the secret
+# via the environment, not here:
+#   CATALERUM_BACKUP__DESTINATION__S3__ACCESS_KEY=...
+#   CATALERUM_BACKUP__DESTINATION__S3__SECRET_KEY=...
+endpoint = ""          # e.g. "https://s3.us-west-2.amazonaws.com" or "http://localhost:9000"
+region = ""            # empty → us-east-1
+access_key = ""
+secret_key = ""
+path_style = false     # true for MinIO and most self-hosted gateways
+
+[backup.destination.webdav]
+# A WebDAV collection (Nextcloud, rclone serve webdav, …). Inject the password via
+# CATALERUM_BACKUP__DESTINATION__WEBDAV__PASSWORD=...
+url = ""
+username = ""
+password = ""
+
+[secrets]
+# Encrypted secret store (SOUL §13/§29). `master_key` is the base64-encoded 32-byte
+# key that encrypts every workspace secret (external Postgres passwords, …) at rest
+# with AES-256-GCM. Supply it via the environment, NEVER the TOML:
+#   CATALERUM_SECRETS__MASTER_KEY=$(head -c32 /dev/urandom | base64)
+# When empty, credentialed features (external DB connections) refuse to store a
+# password rather than write one in the clear. Losing this key orphans every
+# stored secret — provision it durably and rotate deliberately.
+master_key = ""
+
+[external_db]
+# External PostgreSQL connections (SOUL §11/§19): a workspace attaches databases it
+# owns and runs capability-gated SQL against them from tools + automations. These
+# are defaults/hard-caps; the caps bound a `sql_query`'s blast radius.
+# Default max pooled connections per external connection.
+pool_max_connections = 5
+# Hard cap on a single statement's execution time (server statement_timeout), ms.
+statement_timeout_ms = 15000
+# Hard cap on rows a read query may return.
+max_rows = 1000
+
+# Connections may also be supplied as immutable config instead of being added in
+# the UI/API. Each table key is the connection name used by `sql_query`. It is
+# reconciled into an ordinary workspace-owned connection on first use, so schema
+# migrations and Collect SQL automations work identically. `workspaces` accepts
+# workspace slugs (case-insensitive) or UUIDs; empty/omitted = every workspace.
+# Config-defined connections cannot be deleted through the API.
+#
+# Keep passwords out of this file: set `password_env` to the name of an environment
+# variable. A non-empty password requires `[secrets].master_key`, because it is
+# encrypted into each assigned workspace's secret store during reconciliation.
+#
+# [external_db.connections.reporting]
+# host = "postgres.example.internal"
+# port = 5432
+# database = "reporting"
+# username = "catalerum_reader"
+# password_env = "CATALERUM_REPORTING_DB_PASSWORD"
+# sslmode = "require"
+# schema = "public"
+# pool_max = 3
+# workspaces = ["default", "analytics"]
+#
+# [external_db.connections.team-b]
+# host = "team-b-postgres.internal"
+# database = "app"
+# username = "catalerum"
+# password_env = "CATALERUM_TEAM_B_DB_PASSWORD"
+# workspaces = ["3f18ed5d-c9c2-4128-9361-07d7711ed9c8"]

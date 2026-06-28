@@ -1,0 +1,33 @@
+[package]
+name = "catalerum-markdown"
+description = "catalerum: streaming, SIMD-accelerated Markdown parser → HTML / Leptos (native + wasm)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# `html` (the string renderer) is always-on and dependency-free. `leptos` turns
+# on the `markdown → View` renderer; it is enabled by `catalerum-web` only, so
+# the native workspace build/tests never pull Leptos in.
+default = ["html"]
+html = []
+leptos = ["dep:leptos"]
+
+[dependencies]
+# memchr ships portable SIMD newline/byte search (x86 SSE2/AVX2, aarch64 NEON,
+# wasm simd128) on stable; it is already in the workspace lock graph. We use it
+# for the cheap single/double-byte scans and pair it with our own nibble-table
+# membership scanner (`scan.rs`) for the larger inline-special set.
+memchr = "2"
+# Optional: only compiled when the `leptos` feature is on (i.e. inside the wasm
+# web build). Kept feature-bare here; `catalerum-web` selects the CSR backend and
+# Cargo unifies the features across the graph.
+leptos = { version = "0.8.3", optional = true, default-features = false }
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "parse"
+harness = false

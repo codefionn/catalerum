@@ -1,0 +1,36 @@
+[package]
+name = "catalerum-search"
+description = "catalerum: WebSearcher trait impls — Brave / Tavily / Exa / SearXNG / Google PSE / SerpAPI — behind one capability-gated web_search tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Every provider is a thin HTTP+JSON client; ship them all by default. Each is a
+# `dep:reqwest` feature so a slim build can keep only the engines it uses.
+default = ["brave", "tavily", "exa", "searxng", "google", "serpapi"]
+# Brave Search API — independent index, `X-Subscription-Token` header, GET.
+brave = ["dep:reqwest"]
+# Tavily — LLM/RAG-optimized; API key in the JSON body, POST; returns excerpts + answer.
+tavily = ["dep:reqwest"]
+# Exa — neural + keyword; `x-api-key` header, POST.
+exa = ["dep:reqwest"]
+# SearXNG — self-hosted metasearch; no key, `format=json`, GET against a base_url.
+searxng = ["dep:reqwest"]
+# Google Programmable Search Engine (CSE) — `key` + engine `cx`, GET.
+google = ["dep:reqwest"]
+# SerpAPI — real Google/Bing scrape; `api_key` query param, GET.
+serpapi = ["dep:reqwest"]
+
+[dependencies]
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+futures = "0.3.32"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tracing = "0.1.44"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls", "gzip"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros", "rt"] }

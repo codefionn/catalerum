@@ -1,0 +1,13 @@
+# buildkitd config for the docker-container buildx builder (always passed via
+# `docker buildx create --config`, see .gitlab-ci.yml). The registry serves TLS
+# from the internal fionn-router root CA; the runner mounts that CA bundle into
+# job containers at /etc/gitlab-runner/certs/ca.crt, and buildx copies any file
+# referenced here into the builder container, so BuildKit can push images +
+# layer cache over verified TLS.
+#
+# Adjust the host below if your registry name differs.
+[registry."registry.k3s.s.fionn-router.internal"]
+  http = false
+  ca = ["/etc/gitlab-runner/certs/ca.crt"]
+  # For an http or untrusted-cert registry, replace the `ca` line with:
+  # insecure = true

@@ -1,0 +1,194 @@
+# =============================================================================
+# catalerum CI — lint / build / test / publish, driven by `docker buildx bake`
+# (docker-bake.hcl + Dockerfile).
+#
+# On the default branch and on git tags, once lint+build+test pass, the release
+# image is published to  registry.k3s.s.fionn-router.internal/catalerum/catalerum
+# as a multi-arch manifest (PLATFORMS on the build/publish jobs). The Rust
+# binary is cross-compiled on the build host (Dockerfile `build-base` stage),
+# so the runner needs no QEMU/binfmt for the foreign arch — EXCEPT for the
+# `sandbox` and `preview` bake targets (catalerum/catalerum-sandbox,
+# catalerum/catalerum-preview), whose apt layers run target-arch binaries:
+# build/publish register QEMU binfmt (tonistiigi/binfmt, needs the runner's
+# privileged=true, which dind already requires) first.
+#
+# --- Required CI/CD variables (Settings > CI/CD > Variables) ------------------
+#   REGISTRY_USER       username for registry.k3s.s.fionn-router.internal  (protected)
+#   REGISTRY_PASSWORD   its password / token                               (protected, masked)
+#
+# Do NOT set REGISTRY as a project variable: project variables override the
+# value below, and image/cache references must be a bare host (no https://) —
+# a scheme makes buildx fail with "invalid reference format".
+#
+# The registry's internal-CA TLS is trusted by pointing the buildx builder at
+# .gitlab/buildkitd.toml, which references the runner-mounted CA bundle
+# (/etc/gitlab-runner/certs/ca.crt); buildx copies it into the builder.
+#
+# Published images: the API+workers app (catalerum/catalerum), the Trunk/wasm
+# web SPA behind unprivileged nginx (catalerum/catalerum-web), the
+# WorkspaceSandbox operator (catalerum/catalerum-operator, SOUL §20), the
+# standalone preview render service (catalerum/catalerum-preview, SOUL §9/§10),
+# and the batteries-included workspace sandbox (catalerum/catalerum-sandbox). The
+# standalone crates/catalerum-operator/Dockerfile remains for local/kind use.
+# =============================================================================
+
+stages: [lint, build, test, publish]
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+variables:
+  REGISTRY: registry.k3s.s.fionn-router.internal
+  # Harbor references are <host>/<project>/<repo>; images live in the
+  # "catalerum" project. NAME variables are host-less on purpose: full refs are
+  # always assembled as $REGISTRY/<name> in the job scripts, so a project-level
+  # override can only change the name — it can never drop the registry host
+  # (a host-less full ref silently retargets docker.io and the push 403s).
+  # Override *_IMAGE_NAME via project variables if needed; never define
+  # IMAGE/WEB_IMAGE/… full-ref variables.
+  IMAGE_NAME: catalerum/catalerum
+  WEB_IMAGE_NAME: catalerum/catalerum-web
+  OPERATOR_IMAGE_NAME: catalerum/catalerum-operator
+  PREVIEW_IMAGE_NAME: catalerum/catalerum-preview
+  SANDBOX_IMAGE_NAME: catalerum/catalerum-sandbox
+  # docker:dind wiring. TLS is disabled: on the Kubernetes executor the
+  # /certs volume is not shared between the build and dind containers unless
+  # the runner mounts an emptyDir there, so the client would never find
+  # /certs/client/ca.pem. Build and dind share the pod network, so plain
+  # tcp on 2375 never leaves the pod.
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
+
+# Shared setup: dind, create a docker-container builder, log in to the registry
+# (needed for both the layer cache and publishing).
+.bake:
+  image: docker:27
+  services:
+    - docker:27-dind
+  before_script:
+    # dind needs a moment to start listening; retry instead of failing on the
+    # first probe.
+    - timeout 60 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+    # The buildkitd config teaches the builder to trust the internal-CA
+    # registry cert (buildx copies the referenced CA file into the builder).
+    - |
+      docker buildx create --use --name catalerum --driver docker-container \
+        --config "$CI_PROJECT_DIR/.gitlab/buildkitd.toml"
+    - docker buildx inspect --bootstrap
+    - echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
+
+lint:
+  extends: .bake
+  stage: lint
+  rules:
+    - when: never   # TEMP: skipped for now — drop this rules block to re-enable
+  variables:
+    CACHE_REF: $REGISTRY/$IMAGE_NAME:cache-lint
+  script:
+    - docker buildx bake -f docker-bake.hcl lint
+
+# Build the release image to prove it builds and warm the (shared) build cache.
+# No --push here; publishing happens in the publish stage, reusing this cache.
+build:
+  extends: .bake
+  stage: build
+  rules:
+    - when: never   # TEMP: skipped for now — drop this rules block to re-enable
+  variables:
+    CACHE_REF: $REGISTRY/$IMAGE_NAME:cache-build
+    # Cross-compile every published arch here already so the publish stage's
+    # bake is a pure cache hit. Must stay in sync with publish's PLATFORMS.
+    PLATFORMS: linux/amd64,linux/arm64
+  script:
+    # QEMU binfmt for the sandbox image's foreign-arch apt/pip layers (the Rust
+    # targets cross-compile and don't need it). Registered in the node kernel,
+    # so it survives for the builder container.
+    - docker run --rm --privileged tonistiigi/binfmt --install arm64
+    # app + web + operator + preview + sandbox in one bake; per-target caches go
+    # to $CACHE_REF-web / -operator / -preview / -sandbox (docker-bake.hcl).
+    - docker buildx bake -f docker-bake.hcl app web operator preview sandbox
+
+test:
+  extends: .bake
+  stage: test
+  rules:
+    - when: never   # TEMP: skipped for now — drop this rules block to re-enable
+  variables:
+    CACHE_REF: $REGISTRY/$IMAGE_NAME:cache-test
+  script:
+    - docker buildx bake -f docker-bake.hcl test
+
+publish:
+  extends: .bake
+  stage: publish
+  variables:
+    CACHE_REF: $REGISTRY/$IMAGE_NAME:cache-build   # reuse the build stage's cache
+    PLATFORMS: linux/amd64,linux/arm64   # must match build's PLATFORMS
+  script:
+    # Full refs are assembled HERE from $REGISTRY + the name vars — never via
+    # top-level IMAGE/… variables. A project-level full-ref variable that
+    # forgot the host once retargeted the sandbox push at docker.io (which
+    # denies it with an opaque insufficient_scope); building refs in-script
+    # makes that unrepresentable.
+    - IMAGE="$REGISTRY/$IMAGE_NAME"; WEB_IMAGE="$REGISTRY/$WEB_IMAGE_NAME"; OPERATOR_IMAGE="$REGISTRY/$OPERATOR_IMAGE_NAME"; PREVIEW_IMAGE="$REGISTRY/$PREVIEW_IMAGE_NAME"; SANDBOX_IMAGE="$REGISTRY/$SANDBOX_IMAGE_NAME"
+    # Immutable SHA tag + a moving branch/tag-slug tag; add :latest on the
+    # default branch, and use the tag name (+:latest) for git tags. The web
+    # and operator images mirror the app image's tag set.
+    - export TAGS="$IMAGE:sha-$CI_COMMIT_SHORT_SHA,$IMAGE:$CI_COMMIT_REF_SLUG"
+    - export WEB_TAGS="$WEB_IMAGE:sha-$CI_COMMIT_SHORT_SHA,$WEB_IMAGE:$CI_COMMIT_REF_SLUG"
+    - export OPERATOR_TAGS="$OPERATOR_IMAGE:sha-$CI_COMMIT_SHORT_SHA,$OPERATOR_IMAGE:$CI_COMMIT_REF_SLUG"
+    - export PREVIEW_TAGS="$PREVIEW_IMAGE:sha-$CI_COMMIT_SHORT_SHA,$PREVIEW_IMAGE:$CI_COMMIT_REF_SLUG"
+    - export SANDBOX_TAGS="$SANDBOX_IMAGE:sha-$CI_COMMIT_SHORT_SHA,$SANDBOX_IMAGE:$CI_COMMIT_REF_SLUG"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        export TAGS="$TAGS,$IMAGE:latest"
+        export WEB_TAGS="$WEB_TAGS,$WEB_IMAGE:latest"
+        export OPERATOR_TAGS="$OPERATOR_TAGS,$OPERATOR_IMAGE:latest"
+        export PREVIEW_TAGS="$PREVIEW_TAGS,$PREVIEW_IMAGE:latest"
+        export SANDBOX_TAGS="$SANDBOX_TAGS,$SANDBOX_IMAGE:latest"
+      fi
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        export TAGS="$IMAGE:$CI_COMMIT_TAG,$IMAGE:latest"
+        export WEB_TAGS="$WEB_IMAGE:$CI_COMMIT_TAG,$WEB_IMAGE:latest"
+        export OPERATOR_TAGS="$OPERATOR_IMAGE:$CI_COMMIT_TAG,$OPERATOR_IMAGE:latest"
+        export PREVIEW_TAGS="$PREVIEW_IMAGE:$CI_COMMIT_TAG,$PREVIEW_IMAGE:latest"
+        export SANDBOX_TAGS="$SANDBOX_IMAGE:$CI_COMMIT_TAG,$SANDBOX_IMAGE:latest"
+      fi
+    - echo "publishing $TAGS + $WEB_TAGS + $OPERATOR_TAGS + $PREVIEW_TAGS + $SANDBOX_TAGS"
+    # binfmt again — publish runs on a fresh runner pod, the build job's
+    # registration lived on that job's node.
+    - docker run --rm --privileged tonistiigi/binfmt --install arm64
+    - docker buildx bake -f docker-bake.hcl app web operator preview sandbox --push
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# --- OPTIONAL: full-DB test job ----------------------------------------------
+# The bake `test` stage runs cargo test in an isolated builder, so DB-backed
+# tests self-skip. To run them for real, uncomment this job: it runs the native
+# suite directly against a Postgres service with CATALERUM_TEST_DATABASE_URL set.
+# (Add valkey/neo4j/qdrant services + CATALERUM_ env for tests that need them.)
+#
+# test:db:
+#   stage: test
+#   image: rust:slim-bookworm
+#   services:
+#     - name: postgres:16
+#       alias: postgres
+#   variables:
+#     POSTGRES_USER: catalerum
+#     POSTGRES_PASSWORD: catalerum
+#     POSTGRES_DB: catalerum
+#     CATALERUM_TEST_DATABASE_URL: postgres://catalerum:catalerum@postgres:5432/catalerum
+#   before_script:
+#     - apt-get update && apt-get install -y --no-install-recommends
+#         build-essential clang cmake git libclang-dev pkg-config protobuf-compiler
+#   script:
+#     - cargo test --workspace --exclude catalerum-web

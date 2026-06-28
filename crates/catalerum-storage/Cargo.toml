@@ -1,0 +1,25 @@
+[package]
+name = "catalerum-storage"
+description = "catalerum: StorageBackend trait + local / S3 / WebDAV"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+aws-sdk-s3 = { version = "1", features = ["behavior-version-latest"] }
+bytes = "1.11.1"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+chrono = { version = "0.4.45", features = ["serde"] }
+futures = "0.3.32"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset"] }
+roxmltree = "0.20"
+serde = "1.0.228"
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["fs", "io-util"] }
+
+[dev-dependencies]
+tempfile = "3.16.0"
+tokio = { version = "1.52.3", features = ["fs", "io-util", "macros", "rt-multi-thread"] }

@@ -1,0 +1,47 @@
+# llmleaf dev configuration for catalerum (SOUL §17).
+#
+# Uses the deterministic, key-free "echo" provider so chat, tool-call shaping,
+# and streaming run offline and reproducibly in CI — no API keys, no network.
+# `just llmleaf` starts the sibling llmleaf proxy with this file; catalerum's
+# [llm] section points base_url at http://localhost:8088/v1 and sends a bearer
+# that decodes to the [[keys]] `id:password` below (see that section).
+#
+# Run with:  cargo run --manifest-path ../llmleaf/Cargo.toml -p llmleaf -- config/llmleaf.dev.toml
+# (the `just llmleaf` recipe does exactly this).
+
+[server]
+# Consumer (OpenAI-compatible) endpoint listens here: POST /v1/chat/completions.
+listen = "0.0.0.0:8088"
+# Guards llmleaf's admin API + /events stream. Any value works in dev (no admin
+# calls are made by catalerum); kept non-empty so the control surface is gated.
+admin_token = "dev-admin"
+
+# The local, always-up, key-free echo provider — deterministic for CI.
+[[providers]]
+name = "echo"
+kind = "echo"
+
+# Logical model "echo" -> the echo provider. catalerum's [llm].default_model is
+# "echo", so each chat turn deterministically echoes the prompt back as a
+# streamed OpenAI chat.completion.chunk sequence terminated by `data: [DONE]`.
+#
+# Routes are modality-agnostic, and the echo provider implements every modality,
+# so this one route also serves embeddings (POST /v1/embeddings), text-to-speech
+# (POST /v1/audio/speech), and speech-to-text (POST /v1/audio/transcriptions) —
+# matching catalerum's [llm].embedding_model / speech_model / transcription_model,
+# which all default to "echo". No extra routes needed for offline dev.
+[[routes]]
+model = "echo"
+targets = [{ provider = "echo" }]
+
+# Virtual consumer API key. llmleaf authenticates consumers HTTP-Basic-style: the
+# bearer is base64("<id>:<password>"), and the proxy verifies the password against
+# this crypt(3) `pw_hash` — it never stores the plaintext. catalerum sends its
+# [llm].api_key verbatim as that bearer, so catalerum's api_key MUST equal
+# base64("catalerum-dev:dev-echo-key") = "Y2F0YWxlcnVtLWRldjpkZXYtZWNoby1rZXk=".
+# pw_hash is sha512-crypt of "dev-echo-key":
+#   openssl passwd -6 -salt catalerumdevsalt dev-echo-key
+[[keys]]
+id = "catalerum-dev"
+pw_hash = "$6$catalerumdevsalt$iGpH7Hpf3N0.j6u86CIJ0PAgfL8az95uUH1mWKJl003GWVEGN9DpQMCXwY6iM96IAJHhxJPTLo8IXbrsLRlMS1"
+name = "catalerum-dev"

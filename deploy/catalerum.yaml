@@ -1,0 +1,291 @@
+# catalerum — multi-pod HA deployment (SOUL §16 M7).
+#
+#   kubectl apply -f deploy/catalerum.yaml
+#
+# This is the API + workers tier: ONE Deployment, N replicas — the HA point.
+# The catalerum binary runs the Axum API *and* every background worker in the
+# same process, and the M7 audit found every worker is multi-pod-safe, so the
+# whole process scales horizontally as a single combined Deployment:
+#
+#   worker / shared path        why it is safe under N pods
+#   --------------------------  ----------------------------------------------
+#   ingest/sync worker          job_queue claim = FOR UPDATE SKIP LOCKED + an
+#                               atomic stale-lease reclaim → each row runs once.
+#   schedule worker             each occurrence single-fired via a bus lock keyed
+#                               (automation, fire-instant) — one pod enqueues.
+#   backup worker               bus lock keyed by the backup window → one pod runs it.
+#   google watch worker         per-connection bus lock → one pod touches Google.
+#   storage watch worker        scans are idempotent → redundant, never wrong.
+#   channel listener            per-(workspace,channel) LEADER LEASE → exactly one
+#                               pod consumes a Matrix/Telegram channel (M7 fix).
+#
+# REQUIRES Valkey (CATALERUM_VALKEY__ENABLED=true). Those locks/leases live in
+# Valkey; with it disabled every pod falls back to the in-process bus and acts
+# alone → double-fires. This is the single most important HA knob below.
+#
+# The per-workspace sandbox OPERATOR (SOUL §20) is a *separate*, replicas:1
+# Deployment — install it with `kubectl apply -k deploy/` (CRD + operator +
+# api-rbac). It is intentionally NOT duplicated here.
+#
+# Known multi-pod limitations (documented, not yet hardened — see the M7 audit):
+#   * Interactive terminals & per-workspace podman sandboxes are POD-LOCAL: a PTY
+#     lives only on its owning pod. Boot reconcile is pod-scoped (each row carries
+#     the owning pod_id; CATALERUM_POD_ID env → HOSTNAME → random), so a rolling
+#     restart of one pod reclaims only its own rows (+ legacy NULL rows), never a
+#     peer's live sessions. A request that lands on a NON-OWNING pod is now
+#     FORWARDED to the owner (SOUL §16 M7): every pod announces its
+#     `<podIP>:<port>` on the Valkey registry (`cat:pod:{pod_id}`, TTL'd on the
+#     heartbeat clock — the CATALERUM_SERVER__POD_IP downward-API env below), and
+#     the non-owner relays the op over `POST /internal/pod` as an AES-256-GCM
+#     sealed envelope keyed off the shared [secrets].master_key — so terminal
+#     drive/read/file ops and the live output pane work from any pod without
+#     sessionAffinity (affinity remains a latency optimisation, not a
+#     correctness requirement). Forwarding needs the master key set (this
+#     manifest sets it) and Valkey up; without either, the precise
+#     "owned by another pod" errors return. A pod that dies for good no longer
+#     leaks its rows: every pod upserts a pod_heartbeats row every ~30s, and a
+#     periodic sweep reclaims the terminal/sandbox rows of any pod whose
+#     heartbeat has gone stale (past a 5-min grace). The dead pod's registry
+#     entry lapses with its TTL, so a forward to it fails with a precise
+#     "owning pod is no longer reachable" error (its PTY died with it).
+#   * MCP SSE unsolicited notifications (SessionHub) are process-local: a client
+#     only sees notifications from the pod holding its SSE stream.
+#   * `local` storage-watch stores assume a node-local FS; for k8s use S3/WebDAV
+#     backends (or an RWX volume) so every pod sees the same files.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalerum-config
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum
+data:
+  # Non-secret base config. Secrets + backing-service URLs come from the Secret
+  # below via CATALERUM_-prefixed env overrides (prefix + `__` section delimiter,
+  # e.g. CATALERUM_DATABASE__URL). Tune the knobs here; keep credentials out.
+  catalerum.toml: |
+    [server]
+    mode = "multi_user"          # HA/prod is usually multi_user (SOUL §18)
+    listen = "0.0.0.0:8787"
+    # base_url / web_url: set to your public origins (also settable via env).
+
+    [valkey]
+    enabled = true               # MUST stay true for multi-pod coordination.
+
+    [auth]
+    dev_login = false            # never enable the dev magic-link in prod.
+
+    # Optional derived stores — off by default; flip on + point the env URLs below.
+    [qdrant]
+    enabled = false
+    [neo4j]
+    enabled = false
+
+    [preview]
+    # Object → image previews (SOUL §9/§10) render in the standalone preview
+    # service (deploy/preview.yaml). Point at its in-cluster Service; unset (or a
+    # missing service) disables the preview routes. Set a matching service_token
+    # via CATALERUM_PREVIEW__SERVICE_TOKEN if the service enforces PREVIEW_TOKEN.
+    service_url = "http://catalerum-preview"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: catalerum-secrets
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum
+type: Opaque
+stringData:
+  # --- Backing services (external; managed instances or in-cluster StatefulSets) ---
+  # Point these at your Postgres / Valkey / (optional) Neo4j+Qdrant. All pods MUST
+  # share the same instances — that is what makes them one logical deployment.
+  CATALERUM_DATABASE__URL: "postgres://catalerum:CHANGE_ME@postgres:5432/catalerum"
+  CATALERUM_VALKEY__URL: "redis://valkey:6379"
+  CATALERUM_VALKEY__ENABLED: "true"
+  # CATALERUM_NEO4J__URL: "http://neo4j:7474"
+  # CATALERUM_NEO4J__PASSWORD: "CHANGE_ME"
+  # CATALERUM_QDRANT__URL: "http://qdrant:6333"
+
+  # --- LLM gateway (llmleaf / OpenRouter, SOUL §7) ---
+  CATALERUM_LLM__BASE_URL: "http://llmleaf:8088"
+  CATALERUM_LLM__API_KEY: "CHANGE_ME"
+
+  # --- Shared cross-pod secrets (SOUL §13/§9/§11 — the M7 wiring) ---
+  # master_key decrypts every stored provider credential; download/trigger secrets
+  # sign the short-lived public links. ALL must be identical on every pod or
+  # credentials/links minted on one pod fail on another. Generate strong randoms:
+  #   master_key:  openssl rand -base64 32
+  #   link secrets: openssl rand -hex 32
+  CATALERUM_SECRETS__MASTER_KEY: "CHANGE_ME_base64_32_bytes"
+  CATALERUM_SERVER__DOWNLOAD_SECRET: "CHANGE_ME_long_random"
+  CATALERUM_SERVER__TRIGGER_SECRET: "CHANGE_ME_long_random"
+---
+# OPTIONAL: reach externally-managed backing services by in-cluster DNS name.
+# Uncomment + set externalName to your managed endpoint, or delete and run your
+# own Postgres/Valkey StatefulSets with matching Service names.
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: postgres
+#  namespace: catalerum-system
+#spec:
+#  type: ExternalName
+#  externalName: my-postgres.rds.amazonaws.com
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: valkey
+#  namespace: catalerum-system
+#spec:
+#  type: ExternalName
+#  externalName: my-valkey.cache.amazonaws.com
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalerum
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum
+    app.kubernetes.io/part-of: catalerum
+spec:
+  # THE HA POINT. Every worker above is lock/lease/SKIP-LOCKED-guarded, so scale
+  # this freely. (Only drop to 1 if you enable pod-local interactive terminals —
+  # see the header.)
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalerum
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0        # keep serving through a rollout
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalerum
+    spec:
+      # Same SA the operator's api-rbac binds (deploy/api-rbac/*): grants the
+      # WorkspaceSandbox CR rights used only when the k8s exec backend is on.
+      serviceAccountName: catalerum-api
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: catalerum
+          # Build + push your image; `catalerum` (no subcommand) runs API + workers.
+          image: catalerum:latest
+          args: []
+          ports:
+            - name: http
+              containerPort: 8787
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: CATALERUM_CONFIG
+              value: /etc/catalerum/catalerum.toml
+            - name: RUST_LOG
+              value: "info,catalerum=info"
+            # Pod-scoped reconcile of terminal/sandbox rows (SOUL §16/§20).
+            - name: CATALERUM_POD_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Peer-reachable address for cross-pod session forwarding (SOUL §16 M7):
+            # announced on the Valkey registry so a non-owning pod can route a
+            # pod-local terminal op to its owner over the sealed /internal/pod
+            # channel (keyed off CATALERUM_SECRETS__MASTER_KEY).
+            - name: CATALERUM_SERVER__POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          envFrom:
+            - secretRef:
+                name: catalerum-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /etc/catalerum
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          # Liveness: the unauthenticated GET /healthz -> "ok" (SOUL §16 M1).
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness: same endpoint. NOTE it is process-liveness only — it does
+          # NOT probe Postgres/Valkey (the only unauthenticated route is /healthz;
+          # /status requires auth). A backing-store outage is surfaced via /status
+          # + logs, not by removing the pod from the Service.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # Startup: give the boot migrations (store.migrate) generous headroom
+          # before liveness starts, so a slow first migrate isn't killed.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30   # up to ~150s to become live
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+      volumes:
+        - name: config
+          configMap:
+            name: catalerum-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalerum
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalerum
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  # Pod-local terminals are forwarded to their owning pod automatically (SOUL
+  # §16 M7 — see the header), so affinity is optional; pinning a client to its
+  # pod just skips the one-hop relay:
+  # sessionAffinity: ClientIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalerum
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalerum

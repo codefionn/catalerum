@@ -1,0 +1,26 @@
+[package]
+name = "catalerum-store"
+description = "catalerum: Postgres via sqlx — migrations, repositories (source of truth)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Compile-time storage selection. PostgreSQL remains the default when this
+# feature is absent; the all-in-one binary enables `sqlite` and gets a fully
+# monomorphised SqlitePool repository stack (no per-query runtime dispatch).
+sqlite = []
+
+[dependencies]
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+chrono = { version = "0.4.45", features = ["serde"] }
+ring = "0.17.14"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "sqlite", "macros", "uuid", "chrono", "json", "migrate"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+uuid = { version = "1.23.3", features = ["v4", "serde"] }

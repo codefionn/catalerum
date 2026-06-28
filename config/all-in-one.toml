@@ -1,0 +1,57 @@
+[server]
+mode = "multi_user"
+listen = "127.0.0.1:8787"
+base_url = "http://localhost:8080/api"
+web_url = "http://localhost:8080"
+
+[database]
+url = "sqlite:///data/catalerum.db"
+
+[valkey]
+enabled = false
+
+[auth]
+dev_login = false
+password_login = true
+
+[neo4j]
+enabled = false
+
+[qdrant]
+enabled = true
+url = "http://127.0.0.1:6333"
+
+[llm]
+base_url = "http://127.0.0.1:8088"
+api_key = "Y2F0YWxlcnVtLWRldjphbGwtaW4tb25l"
+# The bundled llmleaf polls Catalerum for this UI-managed topology overlay.
+# Other deployment profiles leave the control plane disabled by default.
+control_plane_enabled = true
+default_model = "echo"
+embedding_model = "echo"
+speech_model = "echo"
+speech_voice = "alloy"
+transcription_model = "echo"
+
+[storage]
+watch_interval_secs = 30
+
+[storage.backends.files]
+local_path = "/files"
+bucket = "files"
+browse = true
+watch = true
+
+[preview]
+enabled = true
+service_url = "http://127.0.0.1:8790"
+
+[exec]
+enabled = true
+backend = "local"
+shell = "/bin/bash"
+ephemeral_root = "/work"
+
+[fetch]
+backend = "http"
+allow_private_hosts = false

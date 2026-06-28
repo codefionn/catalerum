@@ -1,0 +1,37 @@
+[package]
+name = "catalerum-automation"
+description = "catalerum: trigger/condition/action engine, durable queue, agent runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Deployments use Postgres by default. Disabling default features builds the
+# domain + execution engine without any storage implementation.
+default = ["postgres"]
+postgres = ["dep:catalerum-store"]
+
+[dependencies]
+# The typed trigger/condition/action model (pure types over `catalerum-core`) +
+# the storage-neutral async execution engine. `catalerum-store` is used only by
+# the Postgres `ExecutionState` edge adapter; orchestration targets the port.
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+# The safe in-process Datalog query language a `GraphQuery` trigger is authored in
+# (SOUL §6.3/§18) — validated here at authoring time. Pure, no Neo4j/reqwest.
+catalerum-logic = { version = "0.1.0", path = "../catalerum-logic" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store", optional = true }
+# `Schedule { cron, tz }` trigger evaluation (SOUL §11): a 5-field POSIX cron
+# parser over chrono, evaluated in an IANA timezone (chrono-tz). Pure time math.
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10"
+croner = "2.2.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+# Job ids (the `run_automation` job a run resumes from, SOUL §5/§11).
+uuid = { version = "1.23.3", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }

@@ -1,0 +1,25 @@
+[package]
+name = "catalerum-exec"
+description = "catalerum: Executor trait + local / container / k8s / bao backends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+bytes = "1.11.1"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+# RFC3339 timestamps for the k8s sandbox's WorkspaceSandbox status lastActivity patch.
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+futures = "0.3.32"
+portable-pty = "0.9.0"
+serde = "1.0.228"
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+uuid = { version = "1", features = ["v4"] }
+# "fs" streams staged files through the sandbox copy channel (copy_in/copy_out).
+tokio = { version = "1.52.3", features = ["fs", "process", "time", "io-util", "rt", "macros", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"

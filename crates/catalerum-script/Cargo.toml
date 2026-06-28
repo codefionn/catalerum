@@ -1,0 +1,24 @@
+[package]
+name = "catalerum-script"
+description = "catalerum: real CodeRunner — Boa sandboxed JS transforms + exec-backed runtimes (SOUL §11 Phase B)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The `CodeRunner` trait the DAG executor delegates inline code/condition nodes to.
+catalerum-automation = { version = "0.1.0", path = "../catalerum-automation" }
+# `provider::{Executor, CommandSpec}` for the exec-backed (shell/python/…) runtimes.
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+# Boa: a pure-Rust, sandboxed JavaScript engine (no FS/net host functions). Runs
+# the `"js"` code/condition nodes as bounded, side-effect-free data transforms.
+boa_engine = "0.21.1"
+async-trait = "0.1.89"
+serde_json = "1.0.150"
+# The Boa `Context` is !Send, so JS runs inside `spawn_blocking`; the join is
+# wrapped in a wall-clock `timeout`. Needs the threaded runtime + time + macros.
+tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "time", "macros"] }
+
+[dev-dependencies]
+serde_json = "1.0.150"

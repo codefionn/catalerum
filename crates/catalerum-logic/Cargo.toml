@@ -1,0 +1,12 @@
+[package]
+name = "catalerum-logic"
+description = "catalerum: a safe in-process Datalog query language over the derived graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json = "1.0.150"
+thiserror = "2.0.18"

@@ -1,0 +1,12 @@
+{
+  "name": "catalerum-e2e",
+  "private": true,
+  "description": "Playwright login-and-chat smoke tests for the catalerum workbench. The @playwright/test pin is EXACT and must match the image tag in docker-compose.playwright.yml (browsers are baked into the image per-version) — bump the two together.",
+  "scripts": {
+    "test": "playwright test",
+    "test:all-in-one": "playwright test --config playwright.all-in-one.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

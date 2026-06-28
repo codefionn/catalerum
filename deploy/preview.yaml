@@ -1,0 +1,129 @@
+# catalerum preview render service (SOUL §9/§10).
+#
+#   kubectl apply -f deploy/preview.yaml
+#
+# A standalone, stateless HTTP service that turns a posted document into a raster
+# image preview (image thumbnail, or the first page of a PDF / office document /
+# spreadsheet / presentation). It ships as its own SLIM image (LibreOffice +
+# poppler + one Rust binary); the distroless catalerum API carries no render
+# toolchain and POSTs documents here over the cluster network.
+#
+# Wire the API to it with `[preview].service_url = "http://catalerum-preview"`
+# (see deploy/catalerum.yaml ConfigMap). Stateless → scale freely; no DB, no
+# secrets (unless you set PREVIEW_TOKEN below and the API's
+# CATALERUM_PREVIEW__SERVICE_TOKEN to match).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalerum-preview
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum-preview
+    app.kubernetes.io/part-of: catalerum
+spec:
+  # Stateless render workers — scale to taste; each request is independent.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalerum-preview
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalerum-preview
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: preview
+          # Build + push your image (docker buildx bake preview).
+          image: catalerum-preview:dev
+          ports:
+            - name: http
+              containerPort: 8790
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PREVIEW_BIND
+              value: "0.0.0.0:8790"
+            - name: RUST_LOG
+              value: "info,catalerum_preview=info"
+            # LibreOffice + tempfiles live on the writable /tmp emptyDir below.
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+            # Optional shared bearer token — set here AND as the API's
+            # CATALERUM_PREVIEW__SERVICE_TOKEN so only the API can call /render.
+            # - name: PREVIEW_TOKEN
+            #   valueFrom:
+            #     secretKeyRef: { name: catalerum-preview-secret, key: token }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              # LibreOffice is memory-hungry on its first office conversion.
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+      volumes:
+        # LibreOffice writes its per-render profile + temp PDFs here; the render
+        # binary uses $TMPDIR. An emptyDir keeps the rootfs read-only.
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalerum-preview
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum-preview
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalerum-preview
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalerum-preview
+  namespace: catalerum-system
+  labels:
+    app.kubernetes.io/name: catalerum-preview
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalerum-preview

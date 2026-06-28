@@ -1,0 +1,25 @@
+[package]
+name = "catalerum-calendar"
+description = "catalerum: CalendarProvider trait + local(ics) / CalDAV / Google"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+chrono = { version = "0.4.45", features = ["serde"] }
+icalendar = { version = "0.17.11", default-features = false, features = ["parser", "chrono-tz"] }
+notify = "9.0.0-rc.4"
+quick-xml = "0.40.1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.10.9"
+tokio = { version = "1.52.3", features = ["fs", "sync", "rt", "macros", "time"] }
+uuid = { version = "1.23.3", features = ["v4", "v5"] }
+
+[dev-dependencies]
+tempfile = "3.24.0"
+tokio = { version = "1.52.3", features = ["full"] }

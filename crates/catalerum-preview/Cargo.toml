@@ -1,0 +1,29 @@
+[package]
+name = "catalerum-preview"
+description = "catalerum: standalone preview render service — pure-Rust image thumbnailer + LibreOffice/poppler document (PDF/office/presentation/table) first-page renderer, behind an HTTP `/render` endpoint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "catalerum-preview-service"
+path = "src/bin/service.rs"
+
+[dependencies]
+async-trait = "0.1.89"
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+# Pure-Rust decode/resize/encode for the image engine + re-encoding the poppler
+# page raster — a wide set of formats out of the box, no C/link dependency.
+image = "0.25"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+# The render service: HTTP server + the runtime that shells poppler/soffice.
+axum = "0.8.9"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "process", "io-util", "time", "fs", "signal"] }
+tempfile = "3"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["full"] }

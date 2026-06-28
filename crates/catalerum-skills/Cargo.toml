@@ -1,0 +1,18 @@
+[package]
+name = "catalerum-skills"
+description = "catalerum: skill registry (markdown-defined) — instructions + tools + code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Lean by design (SOUL §4): this crate is markdown fixtures + an idempotent seed.
+# The invocation/runtime machinery (async-trait, serde, an error enum) lands when
+# the crate grows it; until then only the domain + store types are needed.
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store" }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.23.3", features = ["v4"] }

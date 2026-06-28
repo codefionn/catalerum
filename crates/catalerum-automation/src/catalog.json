@@ -1,0 +1,2592 @@
+[
+  {
+    "id": "trigger.calendar_event",
+    "node_kind": "trigger",
+    "kind": "calendar_event",
+    "title": "Calendar event trigger",
+    "summary": "Fire automation ahead of an upcoming calendar event by lead time",
+    "description": "Fires automation at a specified lead time before calendar events in the workspace. The trigger evaluates events in the scheduler's tick window to determine when to fire. Lead time can be specified as minutes (bare number, object with 'minutes' field, or omitted for fire-at-start). An optional filter gates which events fire using case-insensitive substring predicates on summary, location, and description — all supplied filter keys must match (AND). The scheduler evaluates this trigger on a clock (typically every minute); it does not respond to ad-hoc TriggerEvent dispatches. A calendar event that moves or a changed lead re-fires at the new instant (keyed by automation + event + lead-instant for single-fire across pods).",
+    "params": [
+      {
+        "name": "lead",
+        "ty": "object|integer|null",
+        "required": false,
+        "description": "Minutes before event start to fire the automation. Can be a bare number (e.g. 10), an object with 'minutes' key (e.g. {\"minutes\": 10}), or omitted/null (defaults to 0, fire at event start). Capped at ±1 year (524160 minutes) to prevent overflow. Beyond this cap, the trigger is skipped with a warning."
+      },
+      {
+        "name": "filter",
+        "ty": "object",
+        "required": false,
+        "description": "Optional case-insensitive substring filter object with string keys 'summary', 'location', 'description'. Each supplied key gates on the corresponding event field; omitted keys impose no constraint. All supplied filters must match (AND). Absent or non-object filter fires every event in the lead window (backward-compatible with inert-field era). Example: {\"summary\": \"standup\", \"location\": \"zoom\"} fires only Zoom standups."
+      }
+    ],
+    "example": {
+      "id": "calendar_event",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "calendar_event",
+        "lead": 15,
+        "filter": {
+          "summary": "standup"
+        }
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "calendar",
+      "event",
+      "lead",
+      "reminder",
+      "meeting",
+      "schedule",
+      "filter",
+      "upcoming"
+    ]
+  },
+  {
+    "id": "trigger.channel_message",
+    "node_kind": "trigger",
+    "kind": "channel_message",
+    "title": "Channel Message (push) trigger",
+    "summary": "Fire when an inbound message arrives on a configured channel (e.g. Discord, Matrix, Telegram).",
+    "description": "A push-driven trigger that fires when a message is posted to a configured channel (§25). Matching keys on the channel name (required) and an optional text filter (case-insensitive substring of the message body). The filter, when present, is an object with an optional `text` key — only messages whose body contains the text substring (case-insensitive) will match; all other filter shapes or absent filters impose no text constraint, so the trigger matches on channel alone. The inbound message text and sender ID (the provider-native id, e.g. Matrix @user:hs or Telegram user id) are carried on the run's trigger event so an LlmAgent action can see the message content and know who sent it (multiplayer awareness). Use this for chatbot automations: when a user posts a message containing a keyword, the agent fires and can respond.",
+    "params": [
+      {
+        "name": "channel",
+        "ty": "string",
+        "required": true,
+        "description": "The channel name to listen on (e.g. 'ops', 'alerts'). Must exactly match the configured channel for the trigger to fire."
+      },
+      {
+        "name": "filter",
+        "ty": "object",
+        "required": false,
+        "description": "Optional filter object with a `text` key for case-insensitive substring matching on the message body. E.g. {\"text\": \"deploy\"} fires only on messages containing 'deploy' (case-insensitive). A non-object or absent text key means no text constraint — the trigger fires on any message in the channel. This maintains backward-compatibility with filters authored before the feature was implemented."
+      }
+    ],
+    "example": {
+      "id": "channel_message",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "channel_message",
+        "channel": "ops",
+        "filter": {
+          "text": "deploy"
+        }
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "channel",
+      "message",
+      "chatbot",
+      "discord",
+      "matrix",
+      "telegram",
+      "inbound",
+      "push-driven",
+      "text filter",
+      "substring match",
+      "§25"
+    ]
+  },
+  {
+    "id": "trigger.graph_query",
+    "node_kind": "trigger",
+    "kind": "graph_query",
+    "title": "Graph Query (periodic) trigger",
+    "summary": "Fire periodically by running a safe Datalog query against the knowledge graph.",
+    "description": "A time-driven trigger that runs a Datalog query on a schedule over the derived knowledge graph of notes and topics, and fires the automation when the query returns at least one row. The query is written in catalerum's safe in-process Datalog language, not Cypher: base relations are node(Id, Label), edge(From, EdgeType, To) and prop(Id, Key, Value), with shorthand like note(X), topic(X) and references(F, T). It is scoped to this workspace by construction — the language cannot name a workspace, cannot write, and never touches another tenant's data (SOUL §18) — so no injection or cross-tenant read is possible. The program is validated at authoring time (parse + safety checks) and again before the poller runs it. The `every` field (optional) sets the poll cadence. Use this to trigger automations based on note relationships, topic queries, or derived-store state.",
+    "params": [
+      {
+        "name": "query",
+        "ty": "string",
+        "required": true,
+        "description": "A Datalog program over the workspace knowledge graph. Base relations: node(Id, Label), edge(From, EdgeType, To), prop(Id, Key, Value); shorthand: note(X)/topic(X)/… and references(F, T)/about(F, T)/…; comparisons = != < <= > >= plus ieq (case-insensitive equality) and like (case-insensitive substring). Write optional rules 'head :- body.' and one goal '?- body.'; the trigger fires when the goal has ≥1 result row. Scope is automatic — you cannot and need not reference a workspace."
+      },
+      {
+        "name": "every",
+        "ty": "object",
+        "required": false,
+        "description": "Optional poll cadence, e.g. {\"minutes\": 15}. Omit for the default cadence."
+      }
+    ],
+    "example": {
+      "id": "graph_query",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "graph_query",
+        "query": "?- note(N), references(N, T), topic(T), prop(T, \"display_name\", Name), ieq(Name, \"urgent\")."
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "datalog",
+      "logic query",
+      "knowledge graph",
+      "periodic",
+      "schedule",
+      "workspace-scoped",
+      "safe query",
+      "notes and topics",
+      "§6.3",
+      "§18"
+    ]
+  },
+  {
+    "id": "trigger.collect_email",
+    "node_kind": "trigger",
+    "kind": "collect_email",
+    "title": "Collect Email (source) trigger",
+    "summary": "Poll an email connection and fire one automation run per new external message, for a downstream WriteEmail.",
+    "description": "A SOURCE trigger (SOUL §10/§28) you fill with an email connection id — an existing connection's uuid, discovered via list_connections or created via create_email_connection (there is no separate settings page; connections are managed right here through those tools / the collect node's source picker). It polls the provider on its `every` cadence — heavy I/O kept off the 60s scheduler clock, run via the durable job queue — and fires ONE automation run per new external message (at-least-once), carrying that message as the run's trigger event for a downstream WriteEmail or LlmAgent to act on. Ingest is thus the head of a graph, not a background poller: adding a connection provisions nothing, and until a Collect automation exists the source stays dormant. `commit_on` names a downstream write node; the connection's sync cursor advances for a message only once that node Succeeded for the run (a Condition-Skipped write counts as intentionally committed). Unset commit_on is fire-and-forget — the run still happens and the cursor advances regardless. `backfill_window` (e.g. {\"days\": 30}) bounds the first poll; default is only mail newer than the automation's creation. At-least-once means a message can be delivered more than once (the crash window between an item's WriteEmail and the ledger commit); the engine's idempotent-redelivery gate (SOUL §29) handles that — the WriteEmail reports the item was already stored and downstream non-idempotent nodes (an LlmAgent classify, a LabelEmail) auto-skip, so put WriteEmail first. This supersedes the old mail_received reactor (with no background poller there is nothing for a reactor to fire on).",
+    "params": [
+      {
+        "name": "connection",
+        "ty": "string",
+        "required": true,
+        "description": "The email connection id to pull from — the `id` (a uuid) of an EXISTING email connection (IMAP/JMAP/Gmail/maildir). Required. Find it with the list_connections tool, or register the source first with create_email_connection; a placeholder name is rejected at save time."
+      },
+      {
+        "name": "mailbox",
+        "ty": "string",
+        "required": false,
+        "description": "Optional: narrow to a single folder by name or external id. Default: the connection's configured mailbox."
+      },
+      {
+        "name": "filter",
+        "ty": "object",
+        "required": false,
+        "description": "Optional predicate over the message ({\"sender\"|\"subject\"|\"body\": substring}, the same interim convention as the calendar_event filter). Absent = no constraint."
+      },
+      {
+        "name": "commit_on",
+        "ty": "string",
+        "required": false,
+        "description": "Id of a downstream write node; the connection's sync cursor advances for a message only once that node Succeeded (a Condition-Skipped write counts as intentionally committed). Unset = fire-and-forget (cursor advances regardless)."
+      },
+      {
+        "name": "backfill_window",
+        "ty": "object",
+        "required": false,
+        "description": "Optional bound on the first poll (e.g. {\"days\": 30}). Default: only mail newer than the automation's creation."
+      },
+      {
+        "name": "every",
+        "ty": "object",
+        "required": false,
+        "description": "Optional per-trigger poll cadence (SOUL §29). Accepts a bare number of minutes, an object {\"minutes\": N} or {\"seconds\": N}, or a duration string like \"30s\", \"5m\", \"1h\", \"1h30m\", or \"1y\". Clamped to [60s, 1 year] — a value below the scheduler tick clamps up to 60s rather than erroring. Omit for the default: the shared scheduler tick (polled once every 60s)."
+      }
+    ],
+    "example": {
+      "id": "collect_email",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "collect_email",
+        "connection": "<connection-id>",
+        "commit_on": "write_email"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "email",
+      "mail",
+      "ingest",
+      "collect",
+      "poll",
+      "inbox",
+      "imap",
+      "jmap",
+      "gmail",
+      "maildir",
+      "source",
+      "sync",
+      "§28"
+    ]
+  },
+  {
+    "id": "trigger.collect_calendar",
+    "node_kind": "trigger",
+    "kind": "collect_calendar",
+    "title": "Collect Calendar (source) trigger",
+    "summary": "Poll a calendar connection and fire one automation run per new external event, for a downstream WriteEvent.",
+    "description": "The calendar twin of collect_email (SOUL §8/§10): a SOURCE trigger you fill with a calendar connection id — an existing connection's uuid, discovered via list_connections or created via create_calendar_connection. It polls the provider on its `every` cadence — heavy I/O kept off the 60s scheduler clock, run via the durable job queue — and fires ONE automation run per new external event (at-least-once), carrying that event as the run's trigger event for a downstream WriteEvent to persist. DISTINCT from calendar_event, which is a reminder fired ahead of an already-stored event; collect_calendar is the ingest head that lands external events in the first place. `commit_on` names a downstream write node; the connection's sync cursor advances for an event only once that node Succeeded for the run (a Condition-Skipped write counts as intentionally committed). Unset commit_on is fire-and-forget. `backfill_window` (e.g. {\"days\": 30}) bounds the first poll. `calendar` narrows to one calendar by name or external id; the other fields mean what they do on collect_email.",
+    "params": [
+      {
+        "name": "connection",
+        "ty": "string",
+        "required": true,
+        "description": "The calendar connection id to pull from — the `id` (a uuid) of an EXISTING calendar connection (CalDAV/webcal/local ics). Required. Find it with the list_connections tool, or register the source first with create_calendar_connection; a placeholder name is rejected at save time."
+      },
+      {
+        "name": "calendar",
+        "ty": "string",
+        "required": false,
+        "description": "Optional: narrow to a single calendar by name or external id. Default: the connection's configured calendar."
+      },
+      {
+        "name": "filter",
+        "ty": "object",
+        "required": false,
+        "description": "Optional predicate over the event (the same interim {\"summary\"|\"location\"|\"description\": substring} convention as the calendar_event filter). Absent = no constraint."
+      },
+      {
+        "name": "commit_on",
+        "ty": "string",
+        "required": false,
+        "description": "Id of a downstream write node; the connection's sync cursor advances for an event only once that node Succeeded (a Condition-Skipped write counts as intentionally committed). Unset = fire-and-forget (cursor advances regardless)."
+      },
+      {
+        "name": "backfill_window",
+        "ty": "object",
+        "required": false,
+        "description": "Optional bound on the first poll (e.g. {\"days\": 30}). Default: only events newer than the automation's creation."
+      },
+      {
+        "name": "every",
+        "ty": "object",
+        "required": false,
+        "description": "Optional per-trigger poll cadence (SOUL §29). Accepts a bare number of minutes, an object {\"minutes\": N} or {\"seconds\": N}, or a duration string like \"30s\", \"5m\", \"1h\", \"1h30m\", or \"1y\". Clamped to [60s, 1 year] — a value below the scheduler tick clamps up to 60s rather than erroring. Omit for the default: the shared scheduler tick (polled once every 60s)."
+      }
+    ],
+    "example": {
+      "id": "collect_calendar",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "collect_calendar",
+        "connection": "<connection-id>",
+        "commit_on": "write_event"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "calendar",
+      "events",
+      "ingest",
+      "collect",
+      "poll",
+      "caldav",
+      "ical",
+      "sync",
+      "source",
+      "§8"
+    ]
+  },
+  {
+    "id": "trigger.collect_sql",
+    "node_kind": "trigger",
+    "kind": "collect_sql",
+    "title": "Collect SQL rows (source) trigger",
+    "summary": "Poll an external Postgres connection and fire one automation run per newly-inserted row in wildcard-matched tables.",
+    "description": "The external-database twin of collect_email (SOUL §11/§19): a SOURCE trigger you fill with an external Postgres connection id — an existing connection's uuid, discovered via list_connections or registered by an admin via POST /db/connections. It polls the database on its `every` cadence (heavy I/O off the 60s scheduler clock, via the durable job queue) and fires ONE automation run per newly-INSERTED row in every table matching the `tables` wildcard pattern (`*` matches any run of characters; `orders_*`, `app_*_events`, or schema-qualified `analytics.fact_*`; unqualified patterns match in the connection's configured schema, default public). Tables created later that match the pattern are picked up automatically. The row rides the run's trigger event — downstream nodes read `trigger.row.<column>`, plus `trigger.table` and `trigger.connection`. \"New\" is defined by a monotonically increasing `cursor_column` (an auto-increment id or insertion timestamp); when unset each table auto-detects a sequence/identity integer column (preferring the primary key), else a created_at-style timestamp column, and a table with neither is skipped with a warning. The FIRST poll of a table anchors its cursor at the current maximum — existing rows never fire; only rows inserted after wiring do. Updates and deletes are invisible by design. `commit_on` names a downstream node; the per-table cursor advances for a row only once that node Succeeded for its run (a Condition-Skipped node counts as intentionally committed); unset = fire-and-forget. Polling requires the automation's grant (when set) to cover db:read@<connection>. This closes the loop with emerged UIs: an App INSERTs via the sql_query tool (db:write@<connection>) and this trigger fires an automation per new row.",
+    "params": [
+      {
+        "name": "connection",
+        "ty": "string",
+        "required": true,
+        "description": "The external Postgres connection id to poll — the `id` (a uuid) of an EXISTING connection (kind postgres). Required. Find it with the list_connections tool; a placeholder name is rejected at save time."
+      },
+      {
+        "name": "tables",
+        "ty": "string",
+        "required": true,
+        "description": "Wildcard table pattern: `*` matches any run of characters (e.g. `orders_*`, `*_events`, `analytics.fact_*`). Unqualified patterns match in the connection's configured schema (default `public`). Matching tables are discovered on every poll, so later-created tables join automatically."
+      },
+      {
+        "name": "cursor_column",
+        "ty": "string",
+        "required": false,
+        "description": "The column whose ascending order defines a new row (an auto-increment integer or an insertion timestamp), applied to every matched table. Omit to auto-detect per table: a sequence/identity integer column (preferring the primary key), else a created_at/inserted_at-style timestamp column; tables with neither are skipped with a warning."
+      },
+      {
+        "name": "commit_on",
+        "ty": "string",
+        "required": false,
+        "description": "Id of a downstream node; the per-table cursor advances for a row only once that node Succeeded for its run (a Condition-Skipped node counts as intentionally committed). Unset = fire-and-forget (cursor advances regardless)."
+      },
+      {
+        "name": "every",
+        "ty": "object",
+        "required": false,
+        "description": "Optional per-trigger poll cadence (SOUL §29). Accepts a bare number of minutes, an object {\"minutes\": N} or {\"seconds\": N}, or a duration string like \"30s\", \"5m\", \"1h\", \"1h30m\", or \"1y\". Clamped to [60s, 1 year]. Omit for the default: the shared scheduler tick (polled once every 60s)."
+      }
+    ],
+    "example": {
+      "id": "collect_sql",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "collect_sql",
+        "connection": "<connection-id>",
+        "tables": "orders_*",
+        "commit_on": "handle_row"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "sql",
+      "postgres",
+      "database",
+      "external",
+      "insert",
+      "rows",
+      "table",
+      "wildcard",
+      "collect",
+      "poll",
+      "source",
+      "emerged",
+      "app",
+      "§11"
+    ]
+  },
+  {
+    "id": "trigger.schedule",
+    "node_kind": "trigger",
+    "kind": "schedule",
+    "title": "Cron schedule trigger",
+    "summary": "Fire automation on a recurring schedule using POSIX cron syntax",
+    "description": "Fires automation when a 5-field POSIX cron expression becomes due (standard min hour day-of-month month day-of-week syntax). The cron is evaluated in the specified IANA timezone (e.g., 'America/New_York', 'Europe/Berlin'); absent timezone defaults to UTC. The scheduler ticks periodically (typically every minute) and enqueues a run_automation job for each Schedule trigger whose cron has a due occurrence in the half-open window (after, now]. This half-open window ensures each cron occurrence fires exactly once per scheduler tick, never double-firing or being skipped. Cron validation happens at automation authoring time — invalid crons are rejected before storage. A cron with no representable next occurrence (e.g., Feb 30) is treated as not due. Missed occurrences during downtime are skipped (no catch-up until durable catch-up is implemented).",
+    "params": [
+      {
+        "name": "cron",
+        "ty": "string",
+        "required": true,
+        "description": "A 5-field POSIX cron expression (min hour day-of-month month day-of-week). Examples: '0 9 * * *' (daily at 9am), '*/5 * * * *' (every 5 minutes), '0 0 * * MON' (weekly at midnight Monday). Validated at authoring time; invalid expressions are rejected before storage."
+      },
+      {
+        "name": "tz",
+        "ty": "string",
+        "required": false,
+        "description": "IANA timezone name for evaluating the cron (e.g., 'America/New_York', 'Europe/Berlin', 'Asia/Tokyo'). Omitted/null evaluates cron in UTC. Unknown timezone names are rejected at authoring time."
+      }
+    ],
+    "example": {
+      "id": "schedule",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "schedule",
+        "cron": "0 9 * * *",
+        "tz": "America/New_York"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "schedule",
+      "cron",
+      "timer",
+      "recurring",
+      "clock",
+      "timezone",
+      "periodic",
+      "every"
+    ]
+  },
+  {
+    "id": "trigger.storage_object",
+    "node_kind": "trigger",
+    "kind": "storage_object",
+    "title": "Storage object trigger",
+    "summary": "Fire automation when a file is created, updated, or deleted in a bucket",
+    "description": "Fires an automation on a storage-object change in a bucket. Push-driven: an API upload, a file dropped on a watched backend out-of-band (picked up by the storage watcher within ~1s), or a deletion each dispatch a TriggerEvent to match against enabled automations. The 'event' conjunct is the change kind — 'created' (a new object), 'updated' (an existing object's bytes changed), or 'deleted' (an object removed). 'bucket' names the bucket, 'prefix' narrows by key prefix (None = any key), and 'extensions' narrows by file type. All supplied conjuncts AND together. Events fire best-effort — a dispatch failure never fails the storage operation, only logs a warning. The event payload carries the bucket name, the user-facing object key (the workspace-namespaced physical key is never exposed), and the object's content type so downstream nodes can key on the file type. Note: the pre-existing files on a freshly-attached backend are baselined silently at store creation — only genuinely new/changed/removed files thereafter fire. Recipe (office document → PDF): a 'created' trigger with extensions ['docx','xlsx','pptx','odt'] → a RunCommand action that runs LibreOffice headless ('soffice --headless --convert-to pdf …' on the object's bytes) → a WriteObject action that stores the resulting PDF back.",
+    "params": [
+      {
+        "name": "event",
+        "ty": "string",
+        "required": true,
+        "description": "The storage change kind to match: 'created' (a new object), 'updated' (an existing object's bytes changed), or 'deleted' (an object removed). Matched exactly."
+      },
+      {
+        "name": "bucket",
+        "ty": "string",
+        "required": true,
+        "description": "The storage bucket name to watch (e.g., 'docs', 'uploads'). The trigger fires only when objects in this named bucket match the event type."
+      },
+      {
+        "name": "prefix",
+        "ty": "string",
+        "required": false,
+        "description": "Optional key prefix (e.g., 'inbox/', 'reports/') to filter which objects fire the trigger within the bucket. A key must start with this prefix to match. Omitted/null fires on any key in the bucket."
+      },
+      {
+        "name": "extensions",
+        "ty": "array",
+        "required": false,
+        "description": "Optional file-extension allow-list (e.g. ['docx','xlsx','pptx','odt'] to target office documents). The object key's extension must be one of these to fire — case-insensitive, and each entry's leading dot is optional ('docx' and '.docx' both match report.docx). Empty/omitted fires on any extension."
+      }
+    ],
+    "example": {
+      "id": "storage_object",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "storage_object",
+        "event": "created",
+        "bucket": "docs",
+        "prefix": "inbox/",
+        "extensions": [
+          "docx",
+          "xlsx",
+          "pptx",
+          "odt"
+        ]
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "storage",
+      "file",
+      "upload",
+      "bucket",
+      "object",
+      "created",
+      "updated",
+      "deleted",
+      "modified",
+      "prefix",
+      "extension",
+      "office",
+      "pdf",
+      "convert",
+      "push"
+    ]
+  },
+  {
+    "id": "trigger.task_moved",
+    "node_kind": "trigger",
+    "kind": "task_moved",
+    "title": "Task Moved (push) trigger",
+    "summary": "Fire when a Kanban task moves into a specified column on a specified board.",
+    "description": "A push-driven trigger that fires when a task is moved into a target column on a target board in the Kanban system (§24). Matching keys on both the board name and the target column name — the trigger fires only when a task lands in exactly that column on that board. The moved task details are carried on the run's trigger event so an LlmAgent action can inspect what moved. Use this to automate workflows: when work enters 'In Review', trigger a notification; when tasks reach 'Done', archive them or summarize the sprint.",
+    "params": [
+      {
+        "name": "board",
+        "ty": "string",
+        "required": true,
+        "description": "The Kanban board name (e.g. 'sprint', 'backlog', 'roadmap'). Must exactly match the board for the trigger to fire."
+      },
+      {
+        "name": "to_column",
+        "ty": "string",
+        "required": true,
+        "description": "The target column name (e.g. 'doing', 'done', 'review'). The trigger fires when a task enters this column on the specified board."
+      }
+    ],
+    "example": {
+      "id": "task_moved",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "task_moved",
+        "board": "sprint",
+        "to_column": "done"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "kanban",
+      "task",
+      "board",
+      "column",
+      "workflow",
+      "push-driven",
+      "§24"
+    ]
+  },
+  {
+    "id": "trigger.webhook",
+    "node_kind": "trigger",
+    "kind": "webhook",
+    "title": "Webhook trigger",
+    "summary": "Fire automation via HTTP POST to a named webhook path",
+    "description": "Fires automation when an authenticated HTTP POST request arrives at /webhooks/{path}. The webhook is a push-driven trigger requiring authentication (automation:write capability) and workspace-scoped — a caller can only fire automations in their own workspace. The path is normalized (single leading slash, no trailing slash) so POST /webhooks/deploy, /webhooks//deploy/, and /webhooks/deploy/ all match a trigger authored as 'path: \"/deploy\"'. Multi-segment paths are preserved (e.g., 'ci/deploy/done' becomes '/ci/deploy/done'). The endpoint returns a 202 Accepted with matched automation counts and job ids; actions run out-of-band on the worker. This is authenticated + capability-gated per principle 15; the public-webhook shape (external provider POSTing with a secret token) is a later hardening. Request body is accepted but currently ignored (payload forwarding to the run is a future enhancement).",
+    "params": [
+      {
+        "name": "path",
+        "ty": "string",
+        "required": true,
+        "description": "The webhook URL path to match (e.g., '/deploy-done', '/ci/build/complete'). The path is normalized: leading slashes forced to exactly one, trailing slashes removed, empty paths rejected. Must be non-empty after normalization. Multi-segment paths preserve inner slashes."
+      }
+    ],
+    "example": {
+      "id": "webhook",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "webhook",
+        "path": "/deploy-done"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "webhook",
+      "http",
+      "post",
+      "push",
+      "external",
+      "ci",
+      "event",
+      "authenticated"
+    ]
+  },
+  {
+    "id": "trigger.trigger",
+    "node_kind": "trigger",
+    "kind": "trigger",
+    "title": "Named signal trigger",
+    "summary": "Fire this automation on demand from a named signal (e.g. an emerged-UI button).",
+    "description": "A push-driven trigger with no external source of its own: something inside catalerum emits a named signal and every enabled automation whose trigger names the same signal runs (SOUL §11/§12). The motivating caller is an emerged UI — a button or handler invokes the fire_trigger tool with a matching name, so an AI-authored UI can run a backend workflow on demand without the automation needing a webhook path or a schedule. The same signal is equally fireable from chat, an automation code node, or any other fire_trigger caller. Matching keys on the name alone (exact, case-sensitive) — pick a stable, specific name (e.g. 'rebuild-report', 'sync-now'). The caller may attach an optional payload object; it is carried on the run's trigger event for a downstream Condition / LlmAgent to read but is never part of matching. Firing is gated on automation:write, so a Viewer cannot fire it; the automation still runs under its own §19 authority.",
+    "params": [
+      {
+        "name": "name",
+        "ty": "string",
+        "required": true,
+        "description": "The signal name to listen for (e.g. 'rebuild-report'). A fire_trigger call with this exact name runs the automation. Case-sensitive; choose a stable, specific name and share it with the UI/caller that fires it."
+      }
+    ],
+    "example": {
+      "id": "trigger",
+      "kind": "trigger",
+      "trigger": {
+        "kind": "trigger",
+        "name": "rebuild-report"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "trigger",
+      "signal",
+      "manual",
+      "on-demand",
+      "button",
+      "emerged ui",
+      "fire",
+      "invoke",
+      "push"
+    ]
+  },
+  {
+    "id": "action.create_event",
+    "node_kind": "action",
+    "kind": "create_event",
+    "title": "Create event action",
+    "summary": "Add an event to a local (database-native) calendar.",
+    "description": "A tool-backed action that creates a calendar event in the workspace's local calendar storage (SOUL §8/§11). Use this to schedule meetings, block time, or record availability. Provide RFC-3339 / ISO-8601 `start` and `end` times (e.g., '2026-06-18T09:00:00Z'). Omit `calendar_id` to use the workspace's default local calendar. Provider calendars (synced from external sources like Google Calendar) cannot be edited directly — only local events can be created here.",
+    "params": [
+      {
+        "name": "summary",
+        "ty": "string",
+        "required": true,
+        "description": "Event title (non-empty)."
+      },
+      {
+        "name": "start",
+        "ty": "string",
+        "required": true,
+        "description": "Start time, RFC 3339 / ISO-8601 (e.g. '2026-06-18T09:00:00Z')."
+      },
+      {
+        "name": "end",
+        "ty": "string",
+        "required": true,
+        "description": "End time, RFC 3339 / ISO-8601; must not precede start."
+      },
+      {
+        "name": "all_day",
+        "ty": "boolean",
+        "required": false,
+        "description": "All-day event (true/false). Default false."
+      },
+      {
+        "name": "location",
+        "ty": "string",
+        "required": false,
+        "description": "Optional location string."
+      },
+      {
+        "name": "body",
+        "ty": "string",
+        "required": false,
+        "description": "Optional description or notes."
+      },
+      {
+        "name": "calendar_id",
+        "ty": "string",
+        "required": false,
+        "description": "Optional id of a local calendar. Omit to use the default workspace calendar."
+      }
+    ],
+    "example": {
+      "id": "create_event",
+      "kind": "action",
+      "action": {
+        "kind": "create_event",
+        "summary": "Team Standup",
+        "start": "2026-06-25T09:00:00Z",
+        "end": "2026-06-25T09:30:00Z",
+        "location": "Conference Room A",
+        "body": "Daily sync"
+      },
+      "position": {
+        "x": 100,
+        "y": 200
+      }
+    },
+    "keywords": [
+      "event",
+      "create",
+      "calendar",
+      "meeting",
+      "schedule",
+      "time",
+      "appointment"
+    ]
+  },
+  {
+    "id": "action.write_email",
+    "node_kind": "action",
+    "kind": "write_email",
+    "title": "Write Email action",
+    "summary": "Persist a collected email — idempotently upsert the message from an upstream CollectEmail trigger into the store.",
+    "description": "Persists a COLLECTED email (SOUL §10/§28): it takes the message from an upstream CollectEmail trigger and idempotently upserts it into Postgres by (mailbox_id, uid), enqueuing the §10 chunk → embed → project pipeline. This is the ONLY thing that lands external mail in the store, and it is read-only with respect to the provider (§14). The message is read from the firing trigger automatically, so no params are needed; the optional `archive_raw` flag controls whether the raw RFC822 bytes are archived to object storage. Gated on the email:write capability. IDEMPOTENT REDELIVERY (SOUL §29): its output reports `newly_written` — false when the upsert found an already-stored message (an at-least-once redelivery). The engine latches that into a per-run `redelivery` flag, so the non-idempotent nodes DOWNSTREAM of this write (a classifying LlmAgent, a LabelEmail) auto-skip on a redelivery instead of double-firing — while this idempotent write still runs so its success advances the collect cursor (commit_on). Place the write FIRST (right after the trigger) so its signal protects the rest of the graph.",
+    "params": [
+      {
+        "name": "archive_raw",
+        "ty": "boolean",
+        "required": false,
+        "description": "Whether to archive the raw RFC822 bytes to object storage alongside the upsert. Optional; defaults to false."
+      }
+    ],
+    "example": {
+      "id": "write_email",
+      "kind": "action",
+      "action": {
+        "kind": "write_email"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "email",
+      "write",
+      "persist",
+      "upsert",
+      "store",
+      "ingest",
+      "save",
+      "mailbox"
+    ]
+  },
+  {
+    "id": "action.write_event",
+    "node_kind": "action",
+    "kind": "write_event",
+    "title": "Write Event action",
+    "summary": "Persist a collected calendar event — idempotently upsert the event from an upstream CollectCalendar trigger.",
+    "description": "The calendar twin of write_email (SOUL §8/§10): it takes the event from an upstream CollectCalendar trigger and idempotently upserts it into the store by (calendar_id, uid), enqueuing the event graph projection. The event is read from the firing trigger automatically. By default it lands in the collect source's own calendar; to send it into a separate **local** calendar instead, set `calendar` to that calendar's name — an existing local calendar of that name is reused, otherwise one is created for you (so you can name a destination like \"Feiertage Bayern\" that does not exist yet, without a separate create_calendar step). `calendar_id` (a UUID) does the same by id. A provider calendar is refused — its mirror would be overwritten by the next sync. Gated on the calendar:write capability. Like write_email it reports `newly_written` (false on a redelivery of an already-stored event), which latches the run's `redelivery` flag so downstream non-idempotent nodes auto-skip (SOUL §29).",
+    "params": [
+      {
+        "name": "calendar",
+        "ty": "string",
+        "required": false,
+        "description": "Optional NAME of a local calendar to write the event into, overriding the collect source's calendar. An existing local calendar of that name is reused; otherwise a new local (database-native) calendar is created with this name. Templatable. Prefer this over calendar_id when you have a name rather than a UUID."
+      },
+      {
+        "name": "calendar_id",
+        "ty": "string",
+        "required": false,
+        "description": "Optional id (UUID) — or name — of a local calendar to write the event into, overriding the collect source's calendar. Must resolve to a local (database-native) calendar in this workspace; a name is get-or-created like `calendar`. Templatable. Omit (and omit `calendar`) to keep the source calendar."
+      }
+    ],
+    "example": {
+      "id": "write_event",
+      "kind": "action",
+      "action": {
+        "kind": "write_event"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "calendar",
+      "event",
+      "write",
+      "persist",
+      "upsert",
+      "store",
+      "save"
+    ]
+  },
+  {
+    "id": "action.label_email",
+    "node_kind": "action",
+    "kind": "label_email",
+    "title": "Label Email action",
+    "summary": "Record a classifier verdict on a stored email by setting its free-text labels.",
+    "description": "Records a classifier verdict on a STORED email (SOUL §11/§28): it sets the email's free-text `labels` — e.g. an upstream LlmAgent classifies an email as \"receipt\" or \"urgent\" and this action records that. The update is idempotent (a full replace of the label set). It targets the email written by an upstream WriteEmail node, resolved from the trigger item's (mailbox_id, uid). Gated on the email:write capability. This is a NON-idempotent node for the redelivery gate (SOUL §29): on an at-least-once redelivery of an already-written message (an upstream WriteEmail reported `newly_written: false`) this action AUTO-SKIPS so it doesn't re-label — set `rerun_on_redelivery: true` to force it to re-run every delivery.",
+    "params": [
+      {
+        "name": "labels",
+        "ty": "string[]",
+        "required": true,
+        "description": "The labels to set on the email (a full replace of the existing set). Supports templating from upstream node outputs, e.g. {{ inputs.classify.labels }}."
+      },
+      {
+        "name": "rerun_on_redelivery",
+        "ty": "boolean",
+        "required": false,
+        "description": "Force this non-idempotent action to run even on a redelivery of an already-written item (SOUL §29). Default false — the engine auto-skips it on a redelivery so it doesn't double-fire."
+      }
+    ],
+    "example": {
+      "id": "label_email",
+      "kind": "action",
+      "action": {
+        "kind": "label_email",
+        "labels": [
+          "receipt"
+        ]
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "email",
+      "label",
+      "classify",
+      "tag",
+      "verdict",
+      "triage"
+    ]
+  },
+  {
+    "id": "action.mark_email_read",
+    "node_kind": "action",
+    "kind": "mark_email_read",
+    "title": "Mark Email Read action",
+    "summary": "Mark a stored email read (or unread) by setting its local seen flag.",
+    "description": "Marks a STORED email as read (SOUL §11/§28): it sets the email's local `seen` flag — e.g. after an LlmAgent has triaged a message, this action clears it from the unread count the inbox sidebar shows. Pass `unread: true` to clear the flag instead (mark unread). LOCAL ONLY: catalerum never writes back to the mail provider (§14), so the remote mailbox is untouched and a later provider re-sync that carries fresh flags may overwrite this. It targets the email written by an upstream WriteEmail node, resolved from the trigger item's (mailbox_id, uid). Idempotent for the redelivery gate (SOUL §29): setting one flag re-runs safely, so it is NOT auto-skipped on a redelivery. Gated on the email:write capability.",
+    "params": [
+      {
+        "name": "unread",
+        "ty": "boolean",
+        "required": false,
+        "description": "Set true to mark the email UNREAD (clear the seen flag) instead of read. Default false (mark read)."
+      }
+    ],
+    "example": {
+      "id": "mark_read",
+      "kind": "action",
+      "action": {
+        "kind": "mark_email_read"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "email",
+      "read",
+      "unread",
+      "seen",
+      "mark",
+      "flag",
+      "triage",
+      "inbox"
+    ]
+  },
+  {
+    "id": "action.create_note",
+    "node_kind": "action",
+    "kind": "create_note",
+    "title": "Create note action",
+    "summary": "Create a new markdown note in the workspace.",
+    "description": "A tool-backed action that creates a new markdown note (SOUL §21/§11). Use this to record information, save results, or generate documentation. The `title` is required and non-empty. The `markdown` body is optional (defaults to empty). Tags are optional and normalized (trimmed, de-duplicated). The stored note (with its assigned id) is returned as the action's output.",
+    "params": [
+      {
+        "name": "title",
+        "ty": "string",
+        "required": true,
+        "description": "Note title (non-empty)."
+      },
+      {
+        "name": "markdown",
+        "ty": "string",
+        "required": false,
+        "description": "Markdown body. Optional, defaults to empty."
+      },
+      {
+        "name": "tags",
+        "ty": "array",
+        "required": false,
+        "description": "Optional array of free-text tags (e.g. ['urgent', 'follow-up'])."
+      }
+    ],
+    "example": {
+      "id": "create_note",
+      "kind": "action",
+      "action": {
+        "kind": "create_note",
+        "title": "Daily Standup",
+        "markdown": "## Today's Progress\n- Completed task X\n- Started task Y",
+        "tags": [
+          "standups",
+          "2026-06-25"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "note",
+      "create",
+      "markdown",
+      "document",
+      "save",
+      "record",
+      "tag"
+    ]
+  },
+  {
+    "id": "action.create_task",
+    "node_kind": "action",
+    "kind": "create_task",
+    "title": "Create task action",
+    "summary": "Create a Kanban task (card) on a board",
+    "description": "Creates a new task on a specified board and column, with a title and optional markdown body. Address the board by `board` (its name, case-insensitive) or `board_id`, and the column by `column` (name) or `column_id`; with no column the task lands in the board's first column. The created task is returned with its id. Gated on tasks:write capability. Use to generate work items from automation — create follow-up tasks, populate backlogs, distribute work.",
+    "params": [
+      {
+        "name": "board",
+        "ty": "string",
+        "required": false,
+        "description": "Name of the Kanban board (case-insensitive). Either this or board_id is required."
+      },
+      {
+        "name": "board_id",
+        "ty": "string",
+        "required": false,
+        "description": "Id of the Kanban board; wins over `board` when both are given."
+      },
+      {
+        "name": "title",
+        "ty": "string",
+        "required": true,
+        "description": "Task title (non-empty). Required."
+      },
+      {
+        "name": "column",
+        "ty": "string",
+        "required": false,
+        "description": "Name of the column on that board. Optional; defaults to the first column."
+      },
+      {
+        "name": "column_id",
+        "ty": "string",
+        "required": false,
+        "description": "Id of the column to add the task to. Optional alternative to `column`."
+      },
+      {
+        "name": "body",
+        "ty": "string",
+        "required": false,
+        "description": "Markdown body / description for the task. Optional."
+      }
+    ],
+    "example": {
+      "id": "create_task",
+      "kind": "action",
+      "action": {
+        "kind": "create_task",
+        "board": "Sprint",
+        "title": "Review merged PRs",
+        "body": "Check merged changes and update docs"
+      },
+      "position": {
+        "x": 0,
+        "y": 100
+      }
+    },
+    "keywords": [
+      "task",
+      "kanban",
+      "board",
+      "card",
+      "create",
+      "work"
+    ]
+  },
+  {
+    "id": "action.edit_note",
+    "node_kind": "action",
+    "kind": "edit_note",
+    "title": "Edit note action",
+    "summary": "Update an existing note's title, body, and tags by id.",
+    "description": "A tool-backed action that modifies an existing note (SOUL §21/§11). Use this to update, append to, or restructure notes. Provide the note `id`, a new `title`, and a new markdown `body` — all three are required (absent body means empty). Tags are fully replaced, not merged. The author is immutable. The updated note is returned as output.",
+    "params": [
+      {
+        "name": "id",
+        "ty": "string",
+        "required": true,
+        "description": "Id of the note to edit (from a prior create_note or read_note)."
+      },
+      {
+        "name": "title",
+        "ty": "string",
+        "required": true,
+        "description": "New title (non-empty)."
+      },
+      {
+        "name": "markdown",
+        "ty": "string",
+        "required": false,
+        "description": "New markdown body (replaces existing; empty if omitted)."
+      },
+      {
+        "name": "tags",
+        "ty": "array",
+        "required": false,
+        "description": "New tag set (replaces existing; empty if omitted)."
+      }
+    ],
+    "example": {
+      "id": "edit_note",
+      "kind": "action",
+      "action": {
+        "kind": "edit_note",
+        "id": "note-abc123",
+        "title": "Updated Standup",
+        "markdown": "## Completed\n- Task X done\n- Task Y done",
+        "tags": [
+          "standups",
+          "completed"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 50
+      }
+    },
+    "keywords": [
+      "note",
+      "edit",
+      "update",
+      "modify",
+      "replace",
+      "tags",
+      "markdown"
+    ]
+  },
+  {
+    "id": "action.llm_agent",
+    "node_kind": "action",
+    "kind": "llm_agent",
+    "title": "LLM Agent action",
+    "summary": "Run the agent loop with a restricted tool/skill set",
+    "description": "Runs the agent loop (SOUL §7) with a restricted set of tools and skills, under the automation's capability grant. The agent receives a system prompt (default provided, or you supply one), is optionally confined to specific tools and skills, and can optionally emit JSON output for downstream nodes. Skills' runbook instructions are injected into the system prompt. If the trigger is a channel message, the agent's reply is automatically delivered to that channel. Tool dispatch is capability-gated: the agent can only call tools the automation's grant permits. Requires an LLM client to be configured. This node spends LLM tokens, so it is NON-idempotent for the redelivery gate (SOUL §29): in a collect flow, on an at-least-once redelivery of an already-written item (an upstream WriteEmail/WriteEvent reported `newly_written: false`) it AUTO-SKIPS instead of re-spending — keep the write upstream of it. Set `rerun_on_redelivery: true` to force it to run on every delivery.",
+    "params": [
+      {
+        "name": "system",
+        "ty": "string",
+        "required": false,
+        "description": "System prompt (if omitted, a default is used)"
+      },
+      {
+        "name": "rerun_on_redelivery",
+        "ty": "boolean",
+        "required": false,
+        "description": "Force this token-spending action to run even on a redelivery of an already-written item (SOUL §29). Default false — the engine auto-skips it on a redelivery so it doesn't double-spend."
+      },
+      {
+        "name": "model",
+        "ty": "string",
+        "required": false,
+        "description": "LLM model name (if omitted, the configured default is used)"
+      },
+      {
+        "name": "reasoning_effort",
+        "ty": "string",
+        "required": false,
+        "description": "Reasoning ('thinking') effort for reasoning-capable models: 'low' | 'medium' | 'high' | 'xhigh' | 'max', passed through to the model. Omitted = no reasoning requested (the provider default)."
+      },
+      {
+        "name": "tools",
+        "ty": "string[]",
+        "required": false,
+        "description": "Allowed tool names (empty = all tools advertised, respecting the agent's grant)"
+      },
+      {
+        "name": "skills",
+        "ty": "string[]",
+        "required": false,
+        "description": "Allowed skill names (their instructions are injected into the system prompt)"
+      },
+      {
+        "name": "output",
+        "ty": "string",
+        "required": false,
+        "description": "Output format steering: 'json' directs the model to emit only valid JSON, parsed into the step's data field for downstream use"
+      }
+    ],
+    "example": {
+      "id": "llm_agent",
+      "kind": "action",
+      "action": {
+        "kind": "llm_agent",
+        "system": "You are an automation agent. Use available tools to complete the task.",
+        "tools": [
+          "create_note",
+          "search_semantic"
+        ],
+        "skills": [
+          "weekly-review"
+        ],
+        "output": "json"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "llm",
+      "agent",
+      "model",
+      "claude",
+      "tools",
+      "skills",
+      "loop",
+      "ai"
+    ]
+  },
+  {
+    "id": "action.move_object",
+    "node_kind": "action",
+    "kind": "move_object",
+    "title": "Move object action",
+    "summary": "Move (rename/relocate) a stored file: copy to the destination, then delete the source.",
+    "description": "Relocates a stored file, within one files store or across stores (S3 ↔ local ↔ WebDAV): the file is copied to the destination first, then the source is deleted, and the catalogue/search index follows the move. Backed by the `move_object` tool, registered whenever object storage is configured; gated `storage:write`. `to_key` defaults to `from_key` (a pure store-to-store move); omit `from_store`/`to_store` for the default files store. Params support `{{ path }}` templating against the firing trigger and upstream node outputs (e.g. move a file a StorageObject trigger fired on via `{{ trigger.key }}`). NOT redelivery-safe (a re-run finds the source gone), so it auto-skips on a collect redelivery. To keep the source, use the copy_object tool from a Code node instead.",
+    "params": [
+      {
+        "name": "from_key",
+        "ty": "string",
+        "required": true,
+        "description": "Source object key (store-relative), e.g. `inbox/report.pdf` or a templated `{{ trigger.key }}`."
+      },
+      {
+        "name": "from_store",
+        "ty": "string",
+        "required": false,
+        "description": "Source store name; omitted → the default files store."
+      },
+      {
+        "name": "to_key",
+        "ty": "string",
+        "required": false,
+        "description": "Destination object key; omitted → same as `from_key` (move between stores)."
+      },
+      {
+        "name": "to_store",
+        "ty": "string",
+        "required": false,
+        "description": "Destination store name; omitted → the default files store."
+      }
+    ],
+    "example": {
+      "id": "move_object",
+      "kind": "action",
+      "action": {
+        "kind": "move_object",
+        "from_key": "{{ trigger.key }}",
+        "to_key": "archive/{{ trigger.key }}"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "move",
+      "rename",
+      "relocate",
+      "archive",
+      "object",
+      "file",
+      "storage",
+      "bucket",
+      "store"
+    ]
+  },
+  {
+    "id": "action.move_task",
+    "node_kind": "action",
+    "kind": "move_task",
+    "title": "Move task action",
+    "summary": "Move a task to a different column on the same board.",
+    "description": "A tool-backed action that relocates a task between columns (SOUL §24/§11). Use this to advance work through a workflow (e.g., from 'To Do' to 'In Progress' to 'Done'). Name the destination with `column` (its name on the task's board, case-insensitive) or `column_id`; an optional `position` places the card at that 0-based index (0 = top, omitted = bottom) — a same-column move with a position is a within-column reorder. Moving a task into a different column fires any `TaskMoved` automations registered for that board+column.",
+    "params": [
+      {
+        "name": "task_id",
+        "ty": "string",
+        "required": true,
+        "description": "Id of the task to move."
+      },
+      {
+        "name": "column",
+        "ty": "string",
+        "required": false,
+        "description": "Name of the destination column on the task's board. Either this or column_id is required."
+      },
+      {
+        "name": "column_id",
+        "ty": "string",
+        "required": false,
+        "description": "Id of the destination column (same board); wins over `column` when both are given."
+      },
+      {
+        "name": "position",
+        "ty": "number",
+        "required": false,
+        "description": "Final 0-based index in the destination column (0 = top; clamped). Omitted = bottom."
+      }
+    ],
+    "example": {
+      "id": "move_task",
+      "kind": "action",
+      "action": {
+        "kind": "move_task",
+        "task_id": "task-123",
+        "column": "Done"
+      },
+      "position": {
+        "x": 100,
+        "y": 150
+      }
+    },
+    "keywords": [
+      "task",
+      "move",
+      "kanban",
+      "column",
+      "workflow",
+      "status",
+      "transition",
+      "board"
+    ]
+  },
+  {
+    "id": "action.notify",
+    "node_kind": "action",
+    "kind": "notify",
+    "title": "Notify action",
+    "summary": "Send a message to a configured channel (e.g., Discord webhook).",
+    "description": "A tool-backed action that delivers a text message to a configured channel endpoint (SOUL §25/§11). Use this to notify users, post alerts, or log automation outcomes. The `message` is required and non-empty. The optional `channel` names which configured channel to use (defaults to 'default'). This action is only available when a channel is configured in the server config (`[channels]`). Gated on `channel:write` capability.",
+    "params": [
+      {
+        "name": "message",
+        "ty": "string",
+        "required": true,
+        "description": "The message text to deliver (non-empty)."
+      },
+      {
+        "name": "channel",
+        "ty": "string",
+        "required": false,
+        "description": "Which configured channel to use (default: 'default'). The server lists available channel names."
+      }
+    ],
+    "example": {
+      "id": "notify",
+      "kind": "action",
+      "action": {
+        "kind": "notify",
+        "message": "Deployment complete! Check the logs.",
+        "channel": "ops"
+      },
+      "position": {
+        "x": 100,
+        "y": 350
+      }
+    },
+    "keywords": [
+      "notify",
+      "send",
+      "message",
+      "channel",
+      "discord",
+      "webhook",
+      "alert",
+      "post"
+    ]
+  },
+  {
+    "id": "action.create_chat_thread",
+    "node_kind": "action",
+    "kind": "create_chat_thread",
+    "title": "Create chat thread action",
+    "summary": "Publish automation output as a new thread in Chat.",
+    "description": "Creates a new conversation in the workspace's normal Chat list and writes `message` as its first assistant message. Use it as an output sink after an agent, summary, query, or transform; both fields support upstream templates such as `{{ inputs.agent.text }}`. The optional `title` defaults to 'Automation output'. The resulting thread is marked with origin `automation`, can be opened and continued like any other chat, and the action returns `conversation_id` and `message_id`. Gated on `conversation:write` capability.",
+    "params": [
+      {
+        "name": "title",
+        "ty": "string",
+        "required": false,
+        "description": "Title shown in the Chat thread list (default: 'Automation output')."
+      },
+      {
+        "name": "message",
+        "ty": "string",
+        "required": true,
+        "description": "Non-empty assistant message to publish; may template upstream node output."
+      }
+    ],
+    "example": {
+      "id": "chat_output",
+      "kind": "action",
+      "action": {
+        "kind": "create_chat_thread",
+        "title": "Daily automation report",
+        "message": "{{ inputs.summary.summary }}"
+      },
+      "position": {
+        "x": 100,
+        "y": 450
+      }
+    },
+    "keywords": [
+      "chat",
+      "conversation",
+      "thread",
+      "message",
+      "output",
+      "publish",
+      "report",
+      "assistant"
+    ]
+  },
+  {
+    "id": "action.run_command",
+    "node_kind": "action",
+    "kind": "run_command",
+    "title": "Run command action",
+    "summary": "Execute a shell command or script.",
+    "description": "A tool-backed action that runs a command via the Executor backend (SOUL §20/§11). Use this to integrate with scripts, tools, or external systems. Provide a `command` array (program + arguments, e.g., ['echo', 'hello']). Optionally pipe data via `stdin` and set a `timeout_secs` limit. The process's exit code, stdout, stderr, and timeout flag are returned. This action requires `exec:run` capability (deny-by-default, no base role holds it).",
+    "params": [
+      {
+        "name": "command",
+        "ty": "array",
+        "required": true,
+        "description": "Program + arguments as an array of strings (e.g. ['curl', 'https://example.com'])."
+      },
+      {
+        "name": "stdin",
+        "ty": "string",
+        "required": false,
+        "description": "Optional data to pipe to the command's stdin."
+      },
+      {
+        "name": "timeout_secs",
+        "ty": "integer",
+        "required": false,
+        "description": "Optional wall-clock timeout in seconds."
+      }
+    ],
+    "example": {
+      "id": "run_command",
+      "kind": "action",
+      "action": {
+        "kind": "run_command",
+        "command": [
+          "curl",
+          "-s",
+          "https://api.example.com/status"
+        ],
+        "timeout_secs": 10
+      },
+      "position": {
+        "x": 100,
+        "y": 300
+      }
+    },
+    "keywords": [
+      "command",
+      "execute",
+      "run",
+      "script",
+      "shell",
+      "exec",
+      "process",
+      "bash"
+    ]
+  },
+  {
+    "id": "action.open_terminal",
+    "node_kind": "action",
+    "kind": "open_terminal",
+    "title": "Open terminal action",
+    "summary": "Stand up an interactive terminal (PTY) session.",
+    "description": "A tool-backed action that opens a long-lived interactive terminal you drive over several graph nodes (SOUL §20). The terminal is ephemeral — it runs in a throwaway temp dir; use persist_terminal to keep its files. The action's output carries a `session_id`; downstream terminal_write / terminal_read / persist_terminal / close_terminal nodes reference it by templating it from this node's output, e.g. \"{{ inputs.<this-node-id>.session_id }}\". Pair with a Trigger and an LlmAgent to convert documents: a trigger fires, an agent writes the conversion command (python …), the terminal runs it, and persist_terminal flushes the output. Requires `exec:run` capability (deny-by-default; no base role holds it) and a configured executor backend (`[exec]`).",
+    "params": [
+      {
+        "name": "backend",
+        "ty": "string",
+        "required": false,
+        "description": "Override the runtime for the terminal: local | sandbox | container | kubernetes."
+      }
+    ],
+    "example": {
+      "id": "open",
+      "kind": "action",
+      "action": {
+        "kind": "open_terminal",
+        "backend": "sandbox"
+      },
+      "position": {
+        "x": 100,
+        "y": 300
+      }
+    },
+    "keywords": [
+      "terminal",
+      "shell",
+      "pty",
+      "session",
+      "interactive",
+      "console",
+      "exec",
+      "open"
+    ]
+  },
+  {
+    "id": "action.terminal_write",
+    "node_kind": "action",
+    "kind": "terminal_write",
+    "title": "Terminal write action",
+    "summary": "Send a command line to a terminal session.",
+    "description": "A tool-backed action that writes input to a terminal session opened upstream (SOUL §20). Put the command in `data` and include a trailing newline (\"\\n\") to run it — e.g. \"python convert.py in.docx out.pdf\\n\". Take `session_id` from the open_terminal node's output by templating it, e.g. \"{{ inputs.open.session_id }}\". Output is asynchronous: follow this with a terminal_read node (set its `wait_secs`) to capture the command's result. Requires `exec:run` capability.",
+    "params": [
+      {
+        "name": "session_id",
+        "ty": "string",
+        "required": true,
+        "description": "The terminal session to write to — usually templated from the open_terminal node, e.g. \"{{ inputs.open.session_id }}\"."
+      },
+      {
+        "name": "data",
+        "ty": "string",
+        "required": true,
+        "description": "Bytes to write to the session's stdin. Add a trailing \"\\n\" to execute the line as a command."
+      }
+    ],
+    "example": {
+      "id": "run_python",
+      "kind": "action",
+      "action": {
+        "kind": "terminal_write",
+        "session_id": "{{ inputs.open.session_id }}",
+        "data": "python convert.py input.docx output.pdf\n"
+      },
+      "position": {
+        "x": 100,
+        "y": 420
+      }
+    },
+    "keywords": [
+      "terminal",
+      "write",
+      "stdin",
+      "command",
+      "type",
+      "input",
+      "run",
+      "exec"
+    ]
+  },
+  {
+    "id": "action.terminal_read",
+    "node_kind": "action",
+    "kind": "terminal_read",
+    "title": "Terminal read action",
+    "summary": "Drain a terminal session's output.",
+    "description": "A tool-backed action that reads the output a terminal session has produced since the last read (SOUL §20). Because a PTY's output is asynchronous, set `wait_secs` to block until the command's output settles (drain-until-quiet) before returning — without it, a read immediately after terminal_write may capture nothing. Take `session_id` from the open_terminal node, e.g. \"{{ inputs.open.session_id }}\". Returns `output` (decoded text) for downstream nodes to act on. Requires `exec:run` capability.",
+    "params": [
+      {
+        "name": "session_id",
+        "ty": "string",
+        "required": true,
+        "description": "The terminal session to read from — usually templated, e.g. \"{{ inputs.open.session_id }}\"."
+      },
+      {
+        "name": "wait_secs",
+        "ty": "integer",
+        "required": false,
+        "description": "Block up to this many seconds, draining until the output goes quiet, before returning. Use after running a command so a one-shot read captures its full output."
+      },
+      {
+        "name": "max_bytes",
+        "ty": "integer",
+        "required": false,
+        "description": "Optional cap on the number of bytes returned."
+      }
+    ],
+    "example": {
+      "id": "read_result",
+      "kind": "action",
+      "action": {
+        "kind": "terminal_read",
+        "session_id": "{{ inputs.open.session_id }}",
+        "wait_secs": 30
+      },
+      "position": {
+        "x": 100,
+        "y": 540
+      }
+    },
+    "keywords": [
+      "terminal",
+      "read",
+      "output",
+      "stdout",
+      "capture",
+      "result",
+      "drain",
+      "exec"
+    ]
+  },
+  {
+    "id": "action.persist_terminal",
+    "node_kind": "action",
+    "kind": "persist_terminal",
+    "title": "Persist terminal action",
+    "summary": "Snapshot a terminal's working dir to object storage.",
+    "description": "A tool-backed action that flushes a terminal session's working directory (or, with `source_subdir`, just one folder of it) to object storage under `prefix` (SOUL §20) — how an ephemeral terminal's converted files are kept after the session closes, and how a `git clone` run in the terminal is copied into Files. Take `session_id` from the open_terminal node, e.g. \"{{ inputs.open.session_id }}\". Each written file is catalogued and fires a `storage_object` change event (created/updated), so this can head an indexing automation. Returns the object keys written. Requires `storage:write` capability (the session itself is exec-gated at open time) and a configured object-storage backend (`[storage]`).",
+    "params": [
+      {
+        "name": "session_id",
+        "ty": "string",
+        "required": true,
+        "description": "The terminal session whose working dir to persist — usually templated, e.g. \"{{ inputs.open.session_id }}\"."
+      },
+      {
+        "name": "prefix",
+        "ty": "string",
+        "required": true,
+        "description": "Object-key prefix to write the directory's files under (e.g. \"converted/2026-06-26\")."
+      },
+      {
+        "name": "source_subdir",
+        "ty": "string",
+        "required": false,
+        "description": "Optional: copy only this subdir of the working directory (relative path, no '..'), e.g. a cloned repo's \"wiki\" folder. Omit to copy the whole workdir."
+      }
+    ],
+    "example": {
+      "id": "save_output",
+      "kind": "action",
+      "action": {
+        "kind": "persist_terminal",
+        "session_id": "{{ inputs.open.session_id }}",
+        "prefix": "converted/2026-06-26"
+      },
+      "position": {
+        "x": 100,
+        "y": 660
+      }
+    },
+    "keywords": [
+      "terminal",
+      "persist",
+      "save",
+      "storage",
+      "flush",
+      "upload",
+      "snapshot",
+      "files"
+    ]
+  },
+  {
+    "id": "action.close_terminal",
+    "node_kind": "action",
+    "kind": "close_terminal",
+    "title": "Close terminal action",
+    "summary": "End a terminal session and free its resources.",
+    "description": "A tool-backed action that closes a terminal session, killing its PTY/process (SOUL §20). An ephemeral session's temp dir is discarded — run persist_terminal first if you want to keep its files. Take `session_id` from the open_terminal node, e.g. \"{{ inputs.open.session_id }}\". Place this at the end of a terminal pipeline so a long-running graph doesn't leak sessions. Requires `exec:run` capability.",
+    "params": [
+      {
+        "name": "session_id",
+        "ty": "string",
+        "required": true,
+        "description": "The terminal session to close — usually templated, e.g. \"{{ inputs.open.session_id }}\"."
+      }
+    ],
+    "example": {
+      "id": "close",
+      "kind": "action",
+      "action": {
+        "kind": "close_terminal",
+        "session_id": "{{ inputs.open.session_id }}"
+      },
+      "position": {
+        "x": 100,
+        "y": 780
+      }
+    },
+    "keywords": [
+      "terminal",
+      "close",
+      "end",
+      "kill",
+      "cleanup",
+      "free",
+      "session",
+      "exec"
+    ]
+  },
+  {
+    "id": "action.run_profile",
+    "node_kind": "action",
+    "kind": "run_profile",
+    "title": "Run Profile action",
+    "summary": "Execute a named agent profile under its own grant (attenuation)",
+    "description": "Runs a saved agent profile (a durable scoped agent with its own grant) under capability attenuation: the profile's grant must be a subset of this automation's grant. The user turn is derived from the trigger (channel message text, or a trigger description) unless you supply an explicit input. If the trigger is a channel message, the profile's reply is delivered to that channel. This enables reusable, scoped agent automation: run a named 'weekly-review' profile when scheduled, with restricted capabilities.",
+    "params": [
+      {
+        "name": "profile",
+        "ty": "string",
+        "required": true,
+        "description": "Name of the agent profile to run (workspace-scoped)"
+      },
+      {
+        "name": "input",
+        "ty": "string",
+        "required": false,
+        "description": "Explicit user turn for the profile (if omitted, derived from the trigger)"
+      }
+    ],
+    "example": {
+      "id": "run_profile",
+      "kind": "action",
+      "action": {
+        "kind": "run_profile",
+        "profile": "weekly-review",
+        "input": "Please summarize this week's completed tasks"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "profile",
+      "agent",
+      "scoped",
+      "grant",
+      "attenuation",
+      "reusable"
+    ]
+  },
+  {
+    "id": "action.run_skill",
+    "node_kind": "action",
+    "kind": "run_skill",
+    "title": "Run Skill action",
+    "summary": "Run a named skill through the agent loop (its runbook + tools)",
+    "description": "Runs a saved skill (SOUL §23) through the agent loop (SOUL §7): the skill's instructions become the system prompt and its allowed tools confine the loop, under the automation's capability grant. Capability-gated per skill (skill:use@<name>), exactly like the use_skill tool. The user turn is the explicit input, or the firing channel message's text, or a description of the trigger; if the trigger is a channel message, the reply is delivered back to that channel. Optionally override the model (a skill carries none) or steer JSON output into the step's data for downstream nodes. This makes a reusable skill a one-field automation action — the named, deterministic counterpart to wiring an LLM Agent node by hand. Requires an LLM client to be configured.",
+    "params": [
+      {
+        "name": "skill",
+        "ty": "string",
+        "required": true,
+        "description": "Name of the skill to run (workspace-scoped)"
+      },
+      {
+        "name": "input",
+        "ty": "string",
+        "required": false,
+        "description": "Explicit user turn for the skill (if omitted, derived from the trigger)"
+      },
+      {
+        "name": "model",
+        "ty": "string",
+        "required": false,
+        "description": "LLM model override (a skill carries no model; if omitted, the configured default is used)"
+      },
+      {
+        "name": "output",
+        "ty": "string",
+        "required": false,
+        "description": "Output format steering: 'json' directs the model to emit only valid JSON, parsed into the step's data field for downstream use"
+      }
+    ],
+    "example": {
+      "id": "run_skill",
+      "kind": "action",
+      "action": {
+        "kind": "run_skill",
+        "skill": "triage-inbox",
+        "input": "Triage the newly collected emails"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "skill",
+      "agent",
+      "runbook",
+      "reusable",
+      "use_skill",
+      "loop",
+      "ai"
+    ]
+  },
+  {
+    "id": "action.summarize",
+    "node_kind": "action",
+    "kind": "summarize",
+    "title": "Summarize action",
+    "summary": "Condense text (or the firing event) into a summary with one LLM call.",
+    "description": "A one-shot LLM completion — no tools, no agent loop — that condenses the node's `input` into a `summary` downstream nodes can reference (`{{ inputs.<node-id>.summary }}`). `input` supports `{{ path }}` templating (e.g. `{{ inputs.fetch.content }}` for a fetched page, `{{ trigger.email.body_text }}` for a collected email); leave it unset to summarize the firing trigger event itself. Steer with `instructions` (tone/focus) and `max_words`; `model` overrides the default. Cheaper and more deterministic in shape than an LlmAgent node when all you need is condensation — reach for LlmAgent when the step must call tools or decide anything. Costs tokens on every run, so it auto-skips on a collect redelivery.",
+    "params": [
+      {
+        "name": "input",
+        "ty": "string",
+        "required": false,
+        "description": "The text to summarize; usually a template like `{{ inputs.fetch.content }}`. Unset → the firing trigger event is summarized. Over-long input is truncated with a marker."
+      },
+      {
+        "name": "instructions",
+        "ty": "string",
+        "required": false,
+        "description": "Extra steering appended to the system prompt, e.g. `Focus on action items; bullet list.`"
+      },
+      {
+        "name": "max_words",
+        "ty": "integer",
+        "required": false,
+        "description": "Ask the model to keep the summary under this many words."
+      },
+      {
+        "name": "model",
+        "ty": "string",
+        "required": false,
+        "description": "Model override; omitted → the configured default."
+      }
+    ],
+    "example": {
+      "id": "summarize",
+      "kind": "action",
+      "action": {
+        "kind": "summarize",
+        "input": "{{ inputs.fetch.content }}",
+        "instructions": "Focus on action items.",
+        "max_words": 120
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "summarize",
+      "summary",
+      "condense",
+      "digest",
+      "tldr",
+      "shorten",
+      "llm"
+    ]
+  },
+  {
+    "id": "action.index_document",
+    "node_kind": "action",
+    "kind": "index_document",
+    "title": "Index Document action",
+    "summary": "Embed a note, file, or memory into the vector index for semantic search",
+    "description": "Index, re-index, or de-index one document source in the derived vector (embeddings) index so its text is semantically searchable via search_semantic (SOUL §6.4/§10). Address the source EITHER by `source`+`id` (a known \"object\"/\"note\"/\"memory\" row id) OR — for an uploaded file — by `bucket`+`key` (its storage path), which is exactly what a `storage_object` trigger provides, so you CAN index whatever a trigger just touched: template them, e.g. `bucket` = \"{{ trigger.bucket }}\", `key` = \"{{ trigger.key }}\". `operation` defaults to \"index\" (enqueue the durable, idempotent embed pipeline — chunk, embed, upsert to Qdrant, replacing prior vectors so re-running never duplicates); pass \"delete\" to remove a file's vectors when it was deleted (works even after the file's row is gone). Typical pattern: a `storage_object` trigger → a `condition` on \"{{ trigger.event }}\" → this action with `operation` \"index\" (created/updated) or \"delete\" (deleted). Only available when a vector index is configured ([qdrant].enabled). Requires vector:write authority (a Viewer is denied).",
+    "params": [
+      {
+        "name": "source",
+        "ty": "string",
+        "required": false,
+        "description": "Which kind of source to index: \"object\" (an uploaded file), \"note\", or \"memory\". Required with `id`; defaults to \"object\" when `bucket`+`key` are given."
+      },
+      {
+        "name": "id",
+        "ty": "string",
+        "required": false,
+        "description": "The id of the source row to index (an object/note/memory id matching `source`). Provide this OR `bucket`+`key`."
+      },
+      {
+        "name": "bucket",
+        "ty": "string",
+        "required": false,
+        "description": "For an uploaded file: the storage bucket name (e.g. \"{{ trigger.bucket }}\"). Use with `key` instead of `id`."
+      },
+      {
+        "name": "key",
+        "ty": "string",
+        "required": false,
+        "description": "For an uploaded file: the object key/path within `bucket` (e.g. \"{{ trigger.key }}\")."
+      },
+      {
+        "name": "operation",
+        "ty": "string",
+        "required": false,
+        "description": "\"index\" (default) to embed/re-embed, or \"delete\" to remove the source's vectors (a deleted file)."
+      }
+    ],
+    "example": {
+      "id": "index_document",
+      "kind": "action",
+      "action": {
+        "kind": "index_document",
+        "bucket": "{{ trigger.bucket }}",
+        "key": "{{ trigger.key }}",
+        "operation": "index"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "index",
+      "embed",
+      "embedding",
+      "vector",
+      "qdrant",
+      "semantic",
+      "search",
+      "reindex",
+      "document",
+      "ingest"
+    ]
+  },
+  {
+    "id": "action.reindex_objects",
+    "node_kind": "action",
+    "kind": "reindex_objects",
+    "title": "Reindex objects action",
+    "summary": "Bulk (re-)index every uploaded file under a bucket/prefix into the vector index",
+    "description": "The batch companion to index_document (SOUL §6.4/§10): (re-)indexes every catalogued file under a bucket / key-prefix in one node, enqueuing the durable, idempotent embed pipeline for each. Narrow with `bucket` and/or `key_prefix` (a path prefix like \"wiki/\") to index one folder — e.g. after a persist_terminal copies a cloned wiki subdir into Files — or omit both to index all files. Idempotent: re-running replaces each file's vectors, never duplicates. Bounded by `limit` (default 500, max 5000) so one run can't enqueue an unbounded flood. Only available when a vector index is configured ([qdrant].enabled). Requires vector:write authority.",
+    "params": [
+      {
+        "name": "bucket",
+        "ty": "string",
+        "required": false,
+        "description": "Optional: restrict to files in this storage bucket (its name, e.g. \"{{ trigger.bucket }}\")."
+      },
+      {
+        "name": "key_prefix",
+        "ty": "string",
+        "required": false,
+        "description": "Optional: restrict to files whose key starts with this path prefix (a subdir), e.g. \"wiki/\"."
+      },
+      {
+        "name": "limit",
+        "ty": "integer",
+        "required": false,
+        "description": "Max files to enqueue in this run (1-5000, default 500)."
+      }
+    ],
+    "example": {
+      "id": "reindex_wiki",
+      "kind": "action",
+      "action": {
+        "kind": "reindex_objects",
+        "key_prefix": "wiki/"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "reindex",
+      "index",
+      "embed",
+      "vector",
+      "qdrant",
+      "semantic",
+      "search",
+      "bulk",
+      "folder",
+      "wiki",
+      "ingest"
+    ]
+  },
+  {
+    "id": "action.update_event",
+    "node_kind": "action",
+    "kind": "update_event",
+    "title": "Update calendar event action",
+    "summary": "Edit an existing event on a local calendar",
+    "description": "Updates an existing calendar event's summary, start/end times, and optional fields. This is a full replace of the editable fields — omitted optional fields are cleared (e.g. omit 'location' to remove it). Only events on local (database-stored) calendars can be edited; provider calendars are managed by sync and immutable. Gated on calendar:write capability. Use to reschedule, update details, or correct meeting information.",
+    "params": [
+      {
+        "name": "event_id",
+        "ty": "string",
+        "required": true,
+        "description": "Id of the event to edit (must be on a local calendar). Required."
+      },
+      {
+        "name": "summary",
+        "ty": "string",
+        "required": true,
+        "description": "New event title (non-empty). Required."
+      },
+      {
+        "name": "start",
+        "ty": "string",
+        "required": true,
+        "description": "New start time in RFC-3339/ISO-8601 format. Required."
+      },
+      {
+        "name": "end",
+        "ty": "string",
+        "required": true,
+        "description": "New end time in RFC-3339/ISO-8601 format. Must not precede start. Required."
+      },
+      {
+        "name": "all_day",
+        "ty": "boolean",
+        "required": false,
+        "description": "All-day event flag. Optional; defaults to false."
+      },
+      {
+        "name": "location",
+        "ty": "string",
+        "required": false,
+        "description": "Event location. Optional; omit to clear."
+      },
+      {
+        "name": "body",
+        "ty": "string",
+        "required": false,
+        "description": "Event description/notes. Optional; omit to clear."
+      },
+      {
+        "name": "rrule",
+        "ty": "string",
+        "required": false,
+        "description": "RFC 5545 recurrence rule (e.g. 'FREQ=WEEKLY;BYDAY=MO'). Optional; omit to clear."
+      }
+    ],
+    "example": {
+      "id": "update_event",
+      "kind": "action",
+      "action": {
+        "kind": "update_event",
+        "event_id": "event-42",
+        "summary": "Rescheduled meeting",
+        "start": "2026-06-20T15:00:00Z",
+        "end": "2026-06-20T16:00:00Z"
+      },
+      "position": {
+        "x": 0,
+        "y": 100
+      }
+    },
+    "keywords": [
+      "event",
+      "update",
+      "edit",
+      "calendar",
+      "reschedule",
+      "meeting"
+    ]
+  },
+  {
+    "id": "action.webhook",
+    "node_kind": "action",
+    "kind": "webhook",
+    "title": "Webhook action",
+    "summary": "Deliver a payload to an external webhook URL (HTTP POST).",
+    "description": "Pushes automation output to an external system: an HTTP POST (or PUT/PATCH) of a JSON `payload` — or a raw string `body` + `content_type` — to an absolute http(s) `url`, with optional `headers` for auth/signatures. Backed by the `send_webhook` tool; gated `web:write` (the egress-write counterpart to fetch_url's `web:read`). The same SSRF guard as fetching applies (no private/loopback targets unless the deployment opts in), redirects are never followed, and a non-2xx receiver status FAILS the step — an unacknowledged delivery stops the run rather than silently advancing. Params support `{{ path }}` templating, including inside the payload object. Distinct from the webhook TRIGGER (`trigger.webhook`), which receives inbound calls; this action sends outbound ones. Auto-skips on a collect redelivery (a re-sent delivery would double-notify the receiver).",
+    "params": [
+      {
+        "name": "url",
+        "ty": "string",
+        "required": true,
+        "description": "Absolute http(s) URL to deliver to."
+      },
+      {
+        "name": "payload",
+        "ty": "object",
+        "required": false,
+        "description": "JSON payload, sent as application/json; values may be templates (e.g. `{ \"summary\": \"{{ inputs.sum.summary }}\" }`). Mutually exclusive with `body`; omitting both sends `{}`."
+      },
+      {
+        "name": "body",
+        "ty": "string",
+        "required": false,
+        "description": "Raw string body for non-JSON receivers (form-encoded, XML, plain text). Mutually exclusive with `payload`."
+      },
+      {
+        "name": "content_type",
+        "ty": "string",
+        "required": false,
+        "description": "Content-Type for a raw `body` (default `text/plain`); ignored with `payload`."
+      },
+      {
+        "name": "headers",
+        "ty": "object",
+        "required": false,
+        "description": "Extra request headers, e.g. `{ \"Authorization\": \"Bearer …\" }`. Transport headers (Host, Content-Length, Content-Type, …) are refused."
+      },
+      {
+        "name": "method",
+        "ty": "string",
+        "required": false,
+        "description": "`post` (default), `put`, or `patch`."
+      },
+      {
+        "name": "timeout_secs",
+        "ty": "integer",
+        "required": false,
+        "description": "Per-delivery timeout override, in seconds (capped at 300)."
+      }
+    ],
+    "example": {
+      "id": "webhook",
+      "kind": "action",
+      "action": {
+        "kind": "webhook",
+        "url": "https://hooks.example.com/notify",
+        "payload": {
+          "event": "summarized",
+          "summary": "{{ inputs.summarize.summary }}"
+        }
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "webhook",
+      "http",
+      "post",
+      "outbound",
+      "delivery",
+      "integration",
+      "notify",
+      "push",
+      "egress"
+    ]
+  },
+  {
+    "id": "action.write_object",
+    "node_kind": "action",
+    "kind": "write_object",
+    "title": "Write object action",
+    "summary": "Write a stored file: create or overwrite it from content in hand.",
+    "description": "Writes a file into a files store from content the graph has in hand — a report an LlmAgent drafted, a fetched page, an upstream node's output — creating it or overwriting an existing key. Text goes in `content`, binary as `content_base64`. The write is catalogued and ingested like an upload, so the file becomes searchable and can fire StorageObject automations. Backed by the `write_object` tool, registered whenever object storage is configured; gated `storage:write`. Params support `{{ path }}` templating (e.g. `\"content\": \"{{ inputs.agent.content }}\"`). Idempotent by `(store, key)` — a re-run overwrites the same object — so it stays safe to re-run on a collect redelivery.",
+    "params": [
+      {
+        "name": "key",
+        "ty": "string",
+        "required": true,
+        "description": "Object key (store-relative) to write, e.g. `reports/2026/summary.md`; parent folders are implied."
+      },
+      {
+        "name": "content",
+        "ty": "string",
+        "required": false,
+        "description": "Text content to write (UTF-8). One of `content`/`content_base64` is required; commonly a template like `{{ inputs.agent.content }}`."
+      },
+      {
+        "name": "content_base64",
+        "ty": "string",
+        "required": false,
+        "description": "Binary content, base64-encoded. Mutually exclusive with `content`."
+      },
+      {
+        "name": "store",
+        "ty": "string",
+        "required": false,
+        "description": "Store name; omitted → the default files store."
+      },
+      {
+        "name": "content_type",
+        "ty": "string",
+        "required": false,
+        "description": "MIME type to record (e.g. `text/markdown`); omitted → guessed from the key's extension."
+      }
+    ],
+    "example": {
+      "id": "write_object",
+      "kind": "action",
+      "action": {
+        "kind": "write_object",
+        "key": "reports/summary.md",
+        "content": "{{ inputs.agent.content }}",
+        "content_type": "text/markdown"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "write",
+      "create",
+      "save",
+      "object",
+      "file",
+      "storage",
+      "generate",
+      "persist",
+      "report"
+    ]
+  },
+  {
+    "id": "action.fetch_url",
+    "node_kind": "action",
+    "kind": "fetch_url",
+    "title": "Fetch URL action",
+    "summary": "Fetch a web page and return its content.",
+    "description": "A tool-backed action that GETs a URL through the web-fetch backend (SOUL §27) and returns its content — clean Markdown by default, or raw `html`/plain `text`. The deterministic graph twin of an LLM `fetch_url` call: use it as the head of a scraping pipeline, then feed its output to an html_to_markdown or extract_html node (request `format: \"html\"` if a downstream node needs the raw markup). `mode: \"browser\"` renders JavaScript first. The output carries `url`, `status`, `title`, `format`, `content`, `raw_bytes`, and `content_bytes` — reference them downstream, e.g. \"{{ inputs.<this-node-id>.content }}\". Gated on `web:read`; requires a configured fetch backend ([fetch]) — without one the action reports an unknown-tool error. An SSRF guard (no private/loopback addresses) runs in the backend regardless.",
+    "params": [
+      {
+        "name": "url",
+        "ty": "string",
+        "required": true,
+        "description": "Absolute http(s) URL to fetch."
+      },
+      {
+        "name": "format",
+        "ty": "string",
+        "required": false,
+        "description": "Representation to return: 'markdown' (default, cheapest), 'html' (raw markup, for a downstream extract_html/html_to_markdown node), or 'text'."
+      },
+      {
+        "name": "mode",
+        "ty": "string",
+        "required": false,
+        "description": "'auto' (default; plain GET), 'http', or 'browser' (render JavaScript first)."
+      },
+      {
+        "name": "main_content_only",
+        "ty": "boolean",
+        "required": false,
+        "description": "Drop nav/header/footer/boilerplate before converting (default true). Applies to markdown/text output."
+      }
+    ],
+    "example": {
+      "id": "fetch_url",
+      "kind": "action",
+      "action": {
+        "kind": "fetch_url",
+        "url": "https://example.com/article",
+        "format": "html"
+      },
+      "position": {
+        "x": 100,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "fetch",
+      "url",
+      "web",
+      "http",
+      "download",
+      "scrape",
+      "crawl",
+      "page",
+      "request",
+      "get"
+    ]
+  },
+  {
+    "id": "action.web_search",
+    "node_kind": "action",
+    "kind": "web_search",
+    "title": "Web search action",
+    "summary": "Search the web and return ranked results.",
+    "description": "A tool-backed action that searches the web (SOUL §27) and returns ranked results — each with `title`, `url`, and `snippet` — plus, for some engines, a synthesized `answer`. Pass `queries` as an array; the output is a `searches` map keyed by each query, e.g. \"{{ inputs.<this-node-id>.searches.<query>.results.0.url }}\". `provider` pins a specific engine (brave/tavily/exa/searxng/google/serpapi); omit it for the configured default. `limit`, `provider`, `include_raw_content`, and `freshness` apply to every query: `limit` caps results (1-20); `include_raw_content` returns full page text per hit (slower/pricier, engine-dependent); `freshness` (day/week/month/year) is a best-effort recency hint. Gated on `web:search`; requires a configured search provider ([search]) — without one the action reports an unknown-tool error.",
+    "params": [
+      {
+        "name": "queries",
+        "ty": "array",
+        "required": true,
+        "description": "Search queries; the output is a `searches` map keyed by each query."
+      },
+      {
+        "name": "limit",
+        "ty": "number",
+        "required": false,
+        "description": "Max number of results to return (1-20; default 5)."
+      },
+      {
+        "name": "provider",
+        "ty": "string",
+        "required": false,
+        "description": "Engine override: brave/tavily/exa/searxng/google/serpapi. Omit for the configured default."
+      },
+      {
+        "name": "include_raw_content",
+        "ty": "boolean",
+        "required": false,
+        "description": "Return full page text per hit (default false; slower/pricier, not every engine supports it)."
+      },
+      {
+        "name": "freshness",
+        "ty": "string",
+        "required": false,
+        "description": "Best-effort recency hint: day/week/month/year."
+      }
+    ],
+    "example": {
+      "id": "web_search",
+      "kind": "action",
+      "action": {
+        "kind": "web_search",
+        "queries": [
+          "rust async runtime comparison"
+        ],
+        "limit": 5
+      },
+      "position": {
+        "x": 100,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "search",
+      "web",
+      "google",
+      "brave",
+      "tavily",
+      "exa",
+      "serp",
+      "query",
+      "find",
+      "results",
+      "lookup"
+    ]
+  },
+  {
+    "id": "action.sql_query",
+    "node_kind": "action",
+    "kind": "sql_query",
+    "title": "SQL query action",
+    "summary": "Run a parameterized SQL statement against an external Postgres connection.",
+    "description": "A tool-backed action (SOUL §11/§19) that runs one parameterized SQL statement against an external PostgreSQL database the workspace has connected (register one via the /db/connections API). `connection` is the connection's name (or id). Always use `$1`/`$2` placeholders in `sql` and pass the values in `params` — never interpolate values into the SQL string. Plain parameter arrays/objects bind as jsonb; for a native PostgreSQL text[] parameter, use {\"$pg_type\":\"text[]\",\"value\":[\"a\",\"b\"]}. Reads (SELECT/WITH/VALUES/TABLE) return `rows` (each a JSON object) plus `row_count`; writes (INSERT/UPDATE/DELETE) return `rows_affected`. `mode` (read|write) is inferred from the statement when omitted. DDL (CREATE/ALTER/DROP) is NOT allowed here — manage schema through the migration API. Gated on `db:read@<conn>` for reads and `db:write@<conn>` for writes, checked against the automation's grant. Chain it inside a for_each node to write one row per collected item, e.g. INSERT one article per web_search result: \"{{ item.title }}\".",
+    "params": [
+      {
+        "name": "connection",
+        "ty": "string",
+        "required": true,
+        "description": "The external Postgres connection name (or id)."
+      },
+      {
+        "name": "sql",
+        "ty": "string",
+        "required": true,
+        "description": "A single SQL statement using $1/$2 placeholders for values."
+      },
+      {
+        "name": "params",
+        "ty": "array",
+        "required": false,
+        "description": "Positional values bound to $1, $2, …. Plain arrays/objects bind as jsonb; use {\"$pg_type\":\"text[]\",\"value\":[\"a\",\"b\"]} for PostgreSQL text[]."
+      },
+      {
+        "name": "mode",
+        "ty": "string",
+        "required": false,
+        "description": "'read' or 'write'; inferred from the statement when omitted."
+      },
+      {
+        "name": "max_rows",
+        "ty": "number",
+        "required": false,
+        "description": "Cap on rows returned by a read (bounded by the server [external_db].max_rows)."
+      }
+    ],
+    "example": {
+      "id": "insert_article",
+      "kind": "action",
+      "action": {
+        "kind": "sql_query",
+        "connection": "newsdb",
+        "sql": "INSERT INTO articles (day, title, url) VALUES ($1, $2, $3)",
+        "params": [
+          "2026-07-01",
+          "{{ item.title }}",
+          "{{ item.url }}"
+        ]
+      },
+      "position": {
+        "x": 500,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "sql",
+      "postgres",
+      "query",
+      "database",
+      "insert",
+      "select",
+      "update",
+      "delete",
+      "db",
+      "external",
+      "rows"
+    ]
+  },
+  {
+    "id": "action.html_to_markdown",
+    "node_kind": "action",
+    "kind": "html_to_markdown",
+    "title": "HTML to Markdown action",
+    "summary": "Convert an HTML string to clean Markdown or plain text.",
+    "description": "A pure data-transform action (no network, no capability) that converts an HTML string to clean, structural Markdown — or plain `text` — stripping scripts, styles, and (by default) nav/header/footer boilerplate so the content is cheap to read (SOUL §27). Pair it with an upstream fetch_url node that returned `format: \"html\"` (or an extract_html fragment): template the HTML in via \"{{ inputs.<fetch-node-id>.content }}\". The output carries `format`, `title`, `content`, `source_bytes`, and `content_bytes`. Set `main_content_only` false to keep the whole document (e.g. when converting a fragment).",
+    "params": [
+      {
+        "name": "html",
+        "ty": "string",
+        "required": true,
+        "description": "The HTML document or fragment to convert (often \"{{ inputs.<fetch-node-id>.content }}\")."
+      },
+      {
+        "name": "format",
+        "ty": "string",
+        "required": false,
+        "description": "'markdown' (default) or 'text' (the Markdown with link/emphasis/heading syntax stripped)."
+      },
+      {
+        "name": "main_content_only",
+        "ty": "boolean",
+        "required": false,
+        "description": "Extract just the main <main>/<article> content, dropping page chrome (default true). Set false to convert a whole fragment."
+      },
+      {
+        "name": "include_links",
+        "ty": "boolean",
+        "required": false,
+        "description": "Keep [text](href) links (default true). When false, link text is kept but the URL is dropped."
+      },
+      {
+        "name": "include_images",
+        "ty": "boolean",
+        "required": false,
+        "description": "Keep ![alt](src) image references (default true)."
+      },
+      {
+        "name": "base_url",
+        "ty": "string",
+        "required": false,
+        "description": "Optional base URL to resolve relative href/src against."
+      }
+    ],
+    "example": {
+      "id": "to_markdown",
+      "kind": "action",
+      "action": {
+        "kind": "html_to_markdown",
+        "html": "{{ inputs.fetch_url.content }}",
+        "format": "markdown"
+      },
+      "position": {
+        "x": 300,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "html",
+      "markdown",
+      "convert",
+      "clean",
+      "readable",
+      "text",
+      "strip",
+      "transform",
+      "content"
+    ]
+  },
+  {
+    "id": "action.extract_html",
+    "node_kind": "action",
+    "kind": "extract_html",
+    "title": "Extract HTML action (CSS selectors)",
+    "summary": "Extract parts of an HTML document by CSS selector.",
+    "description": "A pure data-transform action (no network, no capability) that scrapes specific parts out of an HTML document using a CSS `selector` (SOUL §27). For every matching element it returns the chosen `extract`: its visible 'text' (default), 'inner_html', 'outer_html', or a named attribute ('attr', e.g. href/src). Pair it with an upstream fetch_url node that returned `format: \"html\"`: template the HTML in via \"{{ inputs.<fetch-node-id>.content }}\". The output carries `selector`, `count`, `first` (the first match or null), and `matches` (every match, in document order; cap with `limit`). A selector that matches nothing yields an empty result; an invalid selector fails the step.",
+    "params": [
+      {
+        "name": "html",
+        "ty": "string",
+        "required": true,
+        "description": "The HTML document to query (often \"{{ inputs.<fetch-node-id>.content }}\")."
+      },
+      {
+        "name": "selector",
+        "ty": "string",
+        "required": true,
+        "description": "A CSS selector, e.g. 'h1', 'a.title', 'div#main p', 'article h2 a'."
+      },
+      {
+        "name": "extract",
+        "ty": "string",
+        "required": false,
+        "description": "What to pull from each match: 'text' (default), 'inner_html', 'outer_html', or 'attr' (also set `attr`)."
+      },
+      {
+        "name": "attr",
+        "ty": "string",
+        "required": false,
+        "description": "Attribute name to read when extract='attr' (e.g. 'href', 'src'). Matches lacking it are skipped."
+      },
+      {
+        "name": "limit",
+        "ty": "integer",
+        "required": false,
+        "description": "Cap the number of matches returned (document order)."
+      }
+    ],
+    "example": {
+      "id": "extract_links",
+      "kind": "action",
+      "action": {
+        "kind": "extract_html",
+        "html": "{{ inputs.fetch_url.content }}",
+        "selector": "article h2 a",
+        "extract": "attr",
+        "attr": "href"
+      },
+      "position": {
+        "x": 300,
+        "y": 150
+      }
+    },
+    "keywords": [
+      "extract",
+      "css",
+      "selector",
+      "scrape",
+      "html",
+      "parse",
+      "attribute",
+      "href",
+      "element",
+      "query"
+    ]
+  },
+  {
+    "id": "code",
+    "node_kind": "code",
+    "kind": "",
+    "title": "Code (data transform) node",
+    "summary": "Run inline code to transform data flowing through the graph.",
+    "description": "A pure data-transformation node that runs inline code (Phase B implementation; Phase A fails gracefully). Use this to extract fields, compute values, filter data, or prepare output for downstream nodes. The `runtime` selects the language (e.g., 'js' for JavaScript). The `source` is the inline code string. The node's output feeds downstream edges — no branching. Any runtime errors cause the step to fail, surfacing the error in the run audit.",
+    "params": [
+      {
+        "name": "runtime",
+        "ty": "string",
+        "required": true,
+        "description": "Language/runtime for the code (e.g. 'js' for JavaScript, 'boa'). Phase B feature."
+      },
+      {
+        "name": "source",
+        "ty": "string",
+        "required": true,
+        "description": "Inline code to execute. Must be a valid program in the chosen runtime."
+      }
+    ],
+    "example": {
+      "id": "code",
+      "kind": "code",
+      "runtime": "js",
+      "source": "return { count: input.items.length, total: input.items.reduce((a, i) => a + i.value, 0) };",
+      "position": {
+        "x": 200,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "code",
+      "transform",
+      "data",
+      "javascript",
+      "compute",
+      "filter",
+      "extract",
+      "process"
+    ]
+  },
+  {
+    "id": "condition",
+    "node_kind": "condition",
+    "kind": "",
+    "title": "Condition node (branch gate)",
+    "summary": "Route automation execution based on a boolean predicate",
+    "description": "A branch gate that runs inline code to decide which downstream path to take. The code receives the same input as a Code node ({\"trigger\": …, \"inputs\": {…}}) and its result is coerced to JS-like truthiness: truthy (true, non-zero, non-empty string/array/object) routes to the 'true' out-edge port; falsy (false, null, 0, empty string/array/object) routes to 'false'. Nodes on only one branch execute; the other is skipped. A condition failure stops the entire run. Use to gate actions on data — only notify if urgent, only create tasks on weekdays.",
+    "params": [
+      {
+        "name": "runtime",
+        "ty": "string",
+        "required": true,
+        "description": "Code runtime, e.g. 'js'. Phase A fails all conditions (no runtime). Phase B adds Boa."
+      },
+      {
+        "name": "source",
+        "ty": "string",
+        "required": true,
+        "description": "Inline code that returns a value. Its truthiness (JS coercion) determines the branch: truthy → 'true' port, falsy → 'false' port."
+      }
+    ],
+    "example": {
+      "id": "condition",
+      "kind": "condition",
+      "runtime": "js",
+      "source": "return inputs.t1?.priority === 'high';",
+      "position": {
+        "x": 100,
+        "y": 150
+      }
+    },
+    "keywords": [
+      "condition",
+      "branch",
+      "gate",
+      "predicate",
+      "if",
+      "decision",
+      "route",
+      "filter",
+      "boolean"
+    ]
+  },
+  {
+    "id": "for_each",
+    "node_kind": "for_each",
+    "kind": "",
+    "title": "For-each loop (region head)",
+    "summary": "Iterate an array and run the loop body once per element.",
+    "description": "The head of a loop region (SOUL §11). It reads `source` — a dotted path into this node's input envelope that must resolve to a JSON array (e.g. \"inputs.web_search.searches.rust.results\") — and runs the region body (the nodes between this node and its paired loop_end) once per element. Each element is bound to the `item` variable and its 0-based position to the optional `index` variable, both available to body nodes as top-level template refs, e.g. \"{{ item.title }}\" / \"{{ index }}\". Wire this node's out-edge into the first body node, and the last body node into a loop_end whose `for_each` equals this node's id. `max_iterations` caps the run (≤ 1000). The loop_end's output is the array of per-iteration results, so nodes after the loop read \"{{ inputs.<loop_end_id> }}\". Nested loops are not supported.",
+    "params": [
+      {
+        "name": "source",
+        "ty": "string",
+        "required": true,
+        "description": "Dotted path to the array to iterate (e.g. 'inputs.web_search.searches.rust.results')."
+      },
+      {
+        "name": "item",
+        "ty": "string",
+        "required": true,
+        "description": "Variable name bound to each element (referenced as '{{ <item>.field }}')."
+      },
+      {
+        "name": "index",
+        "ty": "string",
+        "required": false,
+        "description": "Optional variable name bound to the 0-based iteration index."
+      },
+      {
+        "name": "max_iterations",
+        "ty": "number",
+        "required": false,
+        "description": "Cap on iterations (default and hard limit 1000)."
+      }
+    ],
+    "example": {
+      "id": "each_article",
+      "kind": "for_each",
+      "source": "inputs.web_search.searches.rust.results",
+      "item": "article",
+      "index": "i",
+      "position": {
+        "x": 300,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "loop",
+      "for",
+      "each",
+      "iterate",
+      "map",
+      "foreach",
+      "array",
+      "repeat",
+      "batch"
+    ]
+  },
+  {
+    "id": "loop_end",
+    "node_kind": "loop_end",
+    "kind": "",
+    "title": "Loop end (region tail)",
+    "summary": "Close a for-each loop region and collect its per-iteration results.",
+    "description": "The tail of a loop region (SOUL §11), paired to its for_each head by id via `for_each`. The last node(s) of the loop body connect into this node; it does not run the body itself — its role is structural. After the loop finishes, this node's output is the array of per-iteration results (one entry per element, keyed by body node id), so nodes downstream of the loop read \"{{ inputs.<this-node-id> }}\". Exactly one loop_end pairs with each for_each.",
+    "params": [
+      {
+        "name": "for_each",
+        "ty": "string",
+        "required": true,
+        "description": "The id of the for_each node this loop_end closes."
+      }
+    ],
+    "example": {
+      "id": "end_each_article",
+      "kind": "loop_end",
+      "for_each": "each_article",
+      "position": {
+        "x": 700,
+        "y": 0
+      }
+    },
+    "keywords": [
+      "loop",
+      "end",
+      "close",
+      "collect",
+      "results",
+      "foreach",
+      "join"
+    ]
+  }
+]

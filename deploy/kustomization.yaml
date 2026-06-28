@@ -1,0 +1,18 @@
+# Install the catalerum per-workspace sandbox operator (SOUL §20):
+#   kubectl apply -k deploy/
+# This installs the CRD, the operator (SA + RBAC + Deployment), and the API's
+# WorkspaceSandbox RBAC. Build/load the operator image first, e.g.:
+#   docker build -f crates/catalerum-operator/Dockerfile -t catalerum-operator:dev .
+#   kind load docker-image catalerum-operator:dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - crd/catalerum.dev_workspacesandboxes.yaml
+  - operator/namespace.yaml
+  - operator/serviceaccount.yaml
+  - operator/clusterrole.yaml
+  - operator/clusterrolebinding.yaml
+  - operator/deployment.yaml
+  - api-rbac/serviceaccount.yaml
+  - api-rbac/role.yaml
+  - api-rbac/rolebinding.yaml

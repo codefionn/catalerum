@@ -1,0 +1,28 @@
+/target
+/dist
+.env
+*.log
+
+# Trunk / wasm build output for the web workbench
+/crates/catalerum-web/dist
+
+# Playwright e2e artifacts
+/node_modules
+/test-results
+/playwright-report
+/e2e/test-results
+/e2e/playwright-report
+
+/test_*
+
+# Real-provider llmleaf config (holds vendor keys / env: refs). The committed
+# config/llmleaf.dev.toml is the key-free echo fallback; prod is local-only and
+# becomes the default LLMLEAF_CONFIG when present (see justfile).
+/config/llmleaf.prod.toml
+/gallery.html
+/.claude/scheduled_tasks.lock
+/e2e/node_modules
+
+/*.png
+/.playwright-mcp
+/*_chat.json

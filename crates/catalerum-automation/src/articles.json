@@ -1,0 +1,145 @@
+[
+  {
+    "id": "email-ingestion",
+    "title": "Ingest email into your workspace",
+    "summary": "Poll an email connection on a schedule and store each message as a durable, searchable email — the foundation every email automation builds on.",
+    "category": "automation-example",
+    "tags": [
+      "email",
+      "ingestion",
+      "sync"
+    ],
+    "keywords": [
+      "email",
+      "inbox",
+      "imap",
+      "gmail",
+      "jmap",
+      "maildir",
+      "sync",
+      "poll",
+      "collect",
+      "fetch mail",
+      "import email",
+      "mailbox",
+      "calendar ingest"
+    ],
+    "related_nodes": [
+      "trigger.collect_email",
+      "action.write_email",
+      "trigger.collect_calendar",
+      "action.write_event"
+    ],
+    "body_md": "# Ingest email into your workspace\n\nPull messages from a mailbox on a cadence and store each one as a durable email you\ncan search, label, and drive further automations from. Nothing is provisioned until\nyou build this automation — an email *connection* is just dormant credentials.\n\n## 1. Register the connection (one-time)\n\n`POST /email/connections` with a `provider` and its fields:\n\n- `maildir` — `root`, `mailbox`\n- `imap` — `host`, `port`, `username`, `password`, `mailbox`\n- `jmap` — `session_url`, `token`, `account_id`\n- `gmail` — `client_id`, `client_secret`, `refresh_token`, `label`\n\nThe response gives you a connection **id** (a uuid). Registering *provisions nothing* —\nthe connection stays dormant until a `collect_email` automation references it.\n`GET /email/connections` reports `collecting: true` once one does.\n\n## 2. Build the collect automation\n\nThe head node is the **`collect_email`** trigger — a *source/poll* trigger, not an\nevent matcher. Every `every` interval it drains new messages and fires one automation\nrun **per message, in order, inline**. Wire it to a **`write_email`** action, the only\nnode that actually persists mail: an idempotent upsert keyed by `(mailbox, uid)` that\nthen enqueues chunk → embed → project, so the message becomes semantically searchable.\n\n```json\n{ \"graph\": {\n  \"nodes\": [\n    { \"id\": \"collect\", \"kind\": \"trigger\", \"trigger\": {\n        \"kind\": \"collect_email\",\n        \"connection\": \"<connection-id>\",\n        \"mailbox\": \"INBOX\",\n        \"every\": \"5m\",\n        \"backfill_window\": { \"days\": 7 },\n        \"commit_on\": \"store\"\n    }, \"position\": { \"x\": 0, \"y\": 0 } },\n    { \"id\": \"store\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"write_email\", \"archive_raw\": true\n    }, \"position\": { \"x\": 260, \"y\": 0 } }\n  ],\n  \"edges\": [ { \"from\": \"collect\", \"to\": \"store\" } ]\n}}\n```\n\n`POST /automations` with this spec (or author it in the visual editor / via the\n`create_automation` tool).\n\n## 3. Trigger config that matters\n\n- **`connection`** (required) — the connection id to pull from.\n- **`mailbox`** — narrow to one folder; omit for the connection default.\n- **`filter`** — `{ \"sender\": \"…\", \"subject\": \"…\", \"body\": \"…\" }`; case-insensitive\n  substrings, AND-ed together. Only matching messages are ingested.\n- **`every`** — poll cadence: bare minutes (`5`), `{ \"minutes\": 5 }` /\n  `{ \"seconds\": 30 }`, or a duration string (`\"30s\"`, `\"5m\"`, `\"1h30m\"`, `\"1y\"`). Clamped to\n  `[60s, 1 year]`.\n- **`backfill_window`** — how far back the *first* poll reaches: a bare number = days,\n  or `{ \"days\" | \"hours\" | \"minutes\": N }`. Unset defaults to **1 day**.\n- **`commit_on`** — the downstream node id whose success commits the message (below).\n\nThe twin **`collect_calendar`** trigger + **`write_event`** action ingest calendar\nevents the same way — swap `mailbox` for `calendar`.\n\n## 4. How committing and the cursor work\n\nEach connection keeps a per-source **ledger** packed into its `sync_token`: a cursor\nplus the set of committed message uids, persisted after **every item**, so a crash\nre-runs at most the one in-flight message.\n\n- **No `commit_on`** → fire-and-forget: the cursor advances whether or not downstream\n  nodes succeed.\n- **`commit_on: \"<node id>\"`** → the cursor only advances past a message once that\n  node's step is `Succeeded` (a not-taken `condition` counts as committed too). Point\n  it at your `write_email` node so a message is never dropped just because a *later*\n  enrichment step failed.\n\n## 5. Idempotent redelivery\n\nOn a re-run of an already-stored message, `write_email` reports\n`newly_written: false`. That **latches the run as a redelivery**: the executor\nauto-**skips** every non-idempotent downstream node (an `llm_agent`, `label_email`,\n`notify`, `webhook`, `create_note`…) so you don't double-classify or double-notify,\nwhile the keyed write still runs to advance the cursor. Need a node to run anyway? Set\nits `rerun_on_redelivery: true`.\n\n## 6. Run it now\n\n`POST /automations/{name}/collect` polls immediately instead of waiting for the next\n`every` bucket — handy for testing. The first poll processes ≤200 messages,\nsteady-state ≤1000 per poll.\n\n**Next:** enrich each stored message with labels — see the `email-tagging` article.\n"
+  },
+  {
+    "id": "email-tagging",
+    "title": "Tag email with an LLM classifier",
+    "summary": "Extend email ingestion with an LLM step that reads each message and applies free-text labels (receipt, newsletter, urgent) via the label_email action.",
+    "category": "automation-example",
+    "tags": [
+      "email",
+      "tagging",
+      "labels",
+      "classification"
+    ],
+    "keywords": [
+      "email",
+      "tag",
+      "label",
+      "classify",
+      "categorize",
+      "sort inbox",
+      "triage",
+      "receipt",
+      "newsletter",
+      "spam",
+      "priority",
+      "llm classifier",
+      "auto label"
+    ],
+    "related_nodes": [
+      "trigger.collect_email",
+      "action.write_email",
+      "action.llm_agent",
+      "action.label_email"
+    ],
+    "body_md": "# Tag email with an LLM classifier\n\nBuild on `email-ingestion`: after each message is stored, have an LLM read it and set\nfree-text **labels** on the stored email. The `label_email` action records a\nclassifier verdict as a **full replace** of the email's label set. (Labels live on\ncatalerum's own `Email.labels` field — catalerum never writes them back to\nGmail/JMAP.)\n\n## The graph\n\n`collect_email → write_email → llm_agent (classify) → label_email`\n\n```json\n{ \"graph\": {\n  \"nodes\": [\n    { \"id\": \"collect\", \"kind\": \"trigger\", \"trigger\": {\n        \"kind\": \"collect_email\", \"connection\": \"<connection-id>\",\n        \"every\": \"5m\", \"commit_on\": \"store\"\n    }, \"position\": { \"x\": 0, \"y\": 0 } },\n    { \"id\": \"store\", \"kind\": \"action\", \"action\": { \"kind\": \"write_email\" },\n      \"position\": { \"x\": 220, \"y\": 0 } },\n    { \"id\": \"classify\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"llm_agent\",\n        \"system\": \"Classify this email. Return JSON {\\\"labels\\\": [...]}, choosing zero or more of: receipt, newsletter, personal, work, urgent, spam.\",\n        \"output\": \"json\"\n    }, \"position\": { \"x\": 440, \"y\": 0 } },\n    { \"id\": \"tag\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"label_email\",\n        \"labels\": \"{{ inputs.classify.labels }}\"\n    }, \"position\": { \"x\": 660, \"y\": 0 } }\n  ],\n  \"edges\": [\n    { \"from\": \"collect\", \"to\": \"store\" },\n    { \"from\": \"store\", \"to\": \"classify\" },\n    { \"from\": \"classify\", \"to\": \"tag\" }\n  ]\n}}\n```\n\n## Why the order is fixed\n\n`label_email` labels a message an upstream `write_email` **already stored** — it\nresolves the target by `(mailbox, uid)` from the collected item. If the email isn't\nstored yet the step fails (*\"write it first with write_email\"*). So `write_email` must\nrun before `label_email` in the same run.\n\n## label_email params\n\n- **`labels`** (required, string array) — the labels to set. A **full replace**, not\n  an append, so pass the complete set each run. Templatable from an upstream node's\n  output — here `{{ inputs.classify.labels }}` pulls the JSON array the `llm_agent`\n  returned. Entries are trimmed and de-duplicated; an empty result fails the step.\n- **`rerun_on_redelivery`** — by default `label_email` is skipped on a redelivered\n  (already-seen) message; set `true` to re-label anyway.\n\n## The classifier step\n\nThe `llm_agent` action with `output: \"json\"` returns structured output the\n`label_email` node reads by name (`inputs.classify.labels`). Keep the `system` prompt\ntight and give it a **closed label vocabulary** so the output stays consistent. For a\nhigh-volume inbox, pin a cheaper `model` and a lower `reasoning_effort` on the action.\n\n## Committing\n\nPoint `commit_on` at the **`store`** (`write_email`) node, not the classifier. A\nmessage is then committed — and never re-ingested — as soon as it's durably stored; if\nthe LLM step has a bad day the message stays put and the classifier just runs again on\nthe next poll (it's non-idempotent, so on a redelivery it re-runs only when you set\n`rerun_on_redelivery: true`).\n"
+  },
+  {
+    "id": "webhooks",
+    "title": "Webhooks: inbound triggers and outbound calls",
+    "summary": "Fire an automation from an external HTTP POST via the webhook trigger, and push data to other systems with the webhook action / send_webhook tool.",
+    "category": "automation-example",
+    "tags": [
+      "webhook",
+      "http",
+      "integration"
+    ],
+    "keywords": [
+      "webhook",
+      "http",
+      "post",
+      "callback",
+      "inbound",
+      "outbound",
+      "integration",
+      "ci",
+      "github",
+      "deploy",
+      "notify external",
+      "send http request",
+      "trigger endpoint",
+      "incoming webhook"
+    ],
+    "related_nodes": [
+      "trigger.webhook",
+      "action.webhook",
+      "action.create_note",
+      "action.summarize",
+      "trigger.trigger"
+    ],
+    "body_md": "# Webhooks: inbound triggers and outbound calls\n\nTwo independent building blocks share the \"webhook\" name: the **`webhook` trigger**\nfires an automation when something POSTs to catalerum, and the **`webhook` action**\nPOSTs from catalerum to some other system.\n\n## Inbound: the webhook trigger\n\nGive the trigger a `path`; an authenticated `POST /webhooks/{path}` then fires every\nenabled automation whose trigger matches that path exactly.\n\n```json\n{ \"graph\": {\n  \"nodes\": [\n    { \"id\": \"hook\", \"kind\": \"trigger\", \"trigger\": {\n        \"kind\": \"webhook\", \"path\": \"/deploy-done\"\n    }, \"position\": { \"x\": 0, \"y\": 0 } },\n    { \"id\": \"note\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"create_note\", \"title\": \"Deploy finished\"\n    }, \"position\": { \"x\": 240, \"y\": 0 } }\n  ],\n  \"edges\": [ { \"from\": \"hook\", \"to\": \"note\" } ]\n}}\n```\n\nCall it:\n\n```\nPOST /webhooks/deploy-done\nAuthorization: Bearer <token with automation:write>\n```\n\nDetails:\n\n- The endpoint is **workspace-scoped and authenticated**, gated on `automation:write`.\n  The path is normalized to exactly one leading slash and no trailing slash, so\n  `/webhooks/deploy-done` matches trigger `path: \"/deploy-done\"`. Inner slashes are\n  preserved (`/webhooks/ci/main/passed`).\n- The response is `202 Accepted` with `{ \"matched\": N, \"jobs\": [ … ] }` — one durable\n  job per matching automation.\n- The request **body is accepted but currently ignored** — the trigger carries only\n  the path. If you need the caller to pass a JSON payload *today*, use a **named\n  signal** (below).\n\n### Need a payload, or a public (no-login) URL?\n\nThe named-signal surface is the sibling of webhooks and does carry a body:\n\n- `POST /triggers/{name}` (authenticated) fires the `trigger` node kind (a named\n  signal) and forwards the JSON body as `payload` your nodes can read.\n- `POST /triggers/mint/{name}` mints a signed, short-lived **public** link; an external\n  caller redeems it at `POST /triggers/fire/{token}` with no login (the HMAC token *is*\n  the capability). Use this for third parties you can't hand a workspace token.\n\n## Outbound: the webhook action\n\nThe **`webhook` action** (backed by the `send_webhook` tool, gated `web:write`) POSTs\nto an external URL. Every field is templatable, so you can forward upstream results.\n\n```json\n{ \"id\": \"notify\", \"kind\": \"action\", \"action\": {\n    \"kind\": \"webhook\",\n    \"url\": \"https://hooks.example.com/catalerum\",\n    \"method\": \"post\",\n    \"headers\": { \"Authorization\": \"Bearer <your-token>\" },\n    \"payload\": { \"event\": \"summarized\", \"text\": \"{{ inputs.summarize.summary }}\" }\n}, \"position\": { \"x\": 480, \"y\": 0 } }\n```\n\nParams:\n\n- **`url`** (required) — absolute `http(s)`. Guarded by an SSRF policy (URL +\n  DNS-rebind checks) before delivery.\n- **`payload`** — JSON body, sent as `application/json`. Mutually exclusive with\n  `body`; if both are omitted it sends `{}`.\n- **`body`** + **`content_type`** — raw string body for non-JSON receivers\n  (`content_type` defaults to `text/plain`).\n- **`headers`** — extra request headers. Transport/hop-by-hop headers (`Host`,\n  `Content-Length`, `Content-Type`, …) are refused.\n- **`method`** — `post` (default), `put`, or `patch`.\n- **`timeout_secs`** — capped at 300.\n\nA non-2xx response from the receiver **fails the step**; redirects are not followed.\nThe action is non-idempotent, so on a collect redelivery it's auto-skipped (see\n`email-ingestion`).\n\n## End-to-end: relay a deploy notice\n\n`POST /webhooks/deploy-done` → `summarize` the payload → `webhook` action to your\nchat's incoming-webhook URL. Inbound fires it; outbound fans it out.\n"
+  },
+  {
+    "id": "github-wiki-mcp",
+    "title": "Index a GitHub wiki with embeddings and serve it over MCP",
+    "summary": "Clone a GitHub wiki in a terminal, land each page in storage, embed-index it on every file event, then expose a prefix-scoped semantic-search MCP endpoint scoped to that wiki.",
+    "category": "automation-example",
+    "tags": [
+      "mcp",
+      "embeddings",
+      "wiki",
+      "semantic-search",
+      "rag"
+    ],
+    "keywords": [
+      "github wiki",
+      "mcp",
+      "embedding",
+      "index",
+      "semantic search",
+      "vector",
+      "rag",
+      "clone repo",
+      "documentation search",
+      "qdrant",
+      "reindex",
+      "knowledge base",
+      "expose docs",
+      "prefix scope"
+    ],
+    "related_nodes": [
+      "trigger.schedule",
+      "action.open_terminal",
+      "action.terminal_write",
+      "action.persist_terminal",
+      "action.close_terminal",
+      "trigger.storage_object",
+      "condition",
+      "action.index_document",
+      "action.reindex_objects"
+    ],
+    "body_md": "# Index a GitHub wiki with embeddings and serve it over MCP\n\nThis recipe turns a GitHub wiki (or any git repo of Markdown) into a **prefix-scoped\nsemantic-search MCP endpoint** — an AI assistant can then answer questions grounded in\nthat wiki, and *only* that wiki. Four stages: clone → land files → embed-index → serve.\n\nRequires an execution backend (`[exec]`, for the terminal) and a vector backend\n(`[qdrant].enabled`, for indexing/search).\n\n## Stage 1 — Clone the wiki and land it in storage\n\nA GitHub wiki is a git repo (`https://github.com/OWNER/REPO.wiki.git`). Clone it in an\nephemeral terminal, then `persist_terminal` snapshots the working directory into object\nstorage under a `prefix` — writing each file as its own object.\n\n```json\n{ \"graph\": {\n  \"nodes\": [\n    { \"id\": \"sched\", \"kind\": \"trigger\", \"trigger\": {\n        \"kind\": \"schedule\", \"cron\": \"0 3 * * *\"\n    }, \"position\": { \"x\": 0, \"y\": 0 } },\n    { \"id\": \"open\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"open_terminal\", \"backend\": \"sandbox\"\n    }, \"position\": { \"x\": 200, \"y\": 0 } },\n    { \"id\": \"clone\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"terminal_write\",\n        \"session_id\": \"{{ inputs.open.session_id }}\",\n        \"data\": \"git clone --depth 1 https://github.com/acme/handbook.wiki.git wiki\\n\"\n    }, \"position\": { \"x\": 400, \"y\": 0 } },\n    { \"id\": \"land\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"persist_terminal\",\n        \"session_id\": \"{{ inputs.open.session_id }}\",\n        \"prefix\": \"wiki/\",\n        \"source_subdir\": \"wiki\"\n    }, \"position\": { \"x\": 600, \"y\": 0 } },\n    { \"id\": \"shut\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"close_terminal\",\n        \"session_id\": \"{{ inputs.open.session_id }}\"\n    }, \"position\": { \"x\": 800, \"y\": 0 } }\n  ],\n  \"edges\": [\n    { \"from\": \"sched\", \"to\": \"open\" },\n    { \"from\": \"open\", \"to\": \"clone\" },\n    { \"from\": \"clone\", \"to\": \"land\" },\n    { \"from\": \"land\", \"to\": \"shut\" }\n  ]\n}}\n```\n\n- **`open_terminal`** `backend`: `local` | `sandbox` | `container` | `kubernetes`; its\n  output carries a `session_id` every later terminal node chains off\n  (`{{ inputs.open.session_id }}`).\n- **`persist_terminal`** — `prefix` (required, the object-key prefix everything lands\n  under, e.g. `wiki/`) and `source_subdir` (copy only the cloned `wiki` folder, not the\n  whole workdir). Each landed file emits a per-file storage event.\n\nRun this on a `schedule` to keep the mirror fresh — a re-clone re-lands changed pages,\nwhich re-fires the indexer below.\n\n## Stage 2 — Index each file on its storage event\n\nLanding files fires a **`storage_object`** trigger per file. A second automation\nlistens for those events and (re)indexes the page, using a `condition` node to route\nindex-vs-delete on the event.\n\n```json\n{ \"graph\": {\n  \"nodes\": [\n    { \"id\": \"evt\", \"kind\": \"trigger\", \"trigger\": {\n        \"kind\": \"storage_object\",\n        \"event\": \"created\", \"bucket\": \"docs\", \"prefix\": \"wiki/\",\n        \"extensions\": [\"md\", \"markdown\"]\n    }, \"position\": { \"x\": 0, \"y\": 0 } },\n    { \"id\": \"route\", \"kind\": \"condition\",\n      \"runtime\": \"js\",\n      \"source\": \"return trigger.event !== 'deleted';\",\n      \"position\": { \"x\": 220, \"y\": 0 } },\n    { \"id\": \"index\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"index_document\",\n        \"bucket\": \"{{ trigger.bucket }}\",\n        \"key\": \"{{ trigger.key }}\",\n        \"operation\": \"index\"\n    }, \"position\": { \"x\": 440, \"y\": -60 } },\n    { \"id\": \"deindex\", \"kind\": \"action\", \"action\": {\n        \"kind\": \"index_document\",\n        \"bucket\": \"{{ trigger.bucket }}\",\n        \"key\": \"{{ trigger.key }}\",\n        \"operation\": \"delete\"\n    }, \"position\": { \"x\": 440, \"y\": 80 } }\n  ],\n  \"edges\": [\n    { \"from\": \"evt\", \"to\": \"route\" },\n    { \"from\": \"route\", \"to\": \"index\",   \"from_port\": \"true\" },\n    { \"from\": \"route\", \"to\": \"deindex\", \"from_port\": \"false\" }\n  ]\n}}\n```\n\n- The **`storage_object`** trigger matches on `event` (`created` | `updated` |\n  `deleted`), `bucket` (set it to the store your terminal snapshot lands in), optional\n  `prefix`, and an optional `extensions` allow-list.\n- A **`condition`** node routes execution down its `\"true\"` / `\"false\"` out-edge ports\n  (set each edge's `from_port`). Here a non-delete event goes to `index`, a delete to\n  `deindex`.\n- **`index_document`** embeds and upserts one object (`operation: \"index\"`) or removes\n  it (`operation: \"delete\"`), keyed by `bucket` + `key` templated from the trigger.\n  It's idempotent.\n- To backfill the whole wiki at once (e.g. right after the first clone), use\n  **`reindex_objects`** with `key_prefix: \"wiki/\"` instead of waiting for per-file\n  events (`limit` 1–5000, default 500).\n\n## Stage 3 — Serve it as a scoped MCP endpoint\n\nIndexed chunks are searchable with the `search_semantic` tool, narrowable by\n`key_prefix` — that prefix scoping is the whole trick. Qdrant has no prefix operator,\nso each vector denormalizes every directory-boundary ancestor of its key into an array\n(`wiki/handbook/onboarding.md` → `[\"wiki/\", \"wiki/handbook/\"]`); a subdir search is\nthen an exact array match.\n\nCreate an **MCP endpoint** — a small stored JavaScript program that declares one MCP\ntool and calls `search_semantic` — pinned to this wiki's `bucket_name` + `key_prefix`:\n\n```\nPOST /mcp-endpoints\n{\n  \"name\": \"acme-handbook\",\n  \"description\": \"Search the Acme company handbook.\",\n  \"bucket_name\": \"docs\",\n  \"key_prefix\": \"wiki/\",\n  \"enabled\": true,\n  \"script\": \"if (input.method === 'tools/list') { return [{ name: 'search_handbook', description: 'Search the Acme handbook', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } }]; } if (input.method === 'tools/call') { return catalerum.callTool('search_semantic', { query: input.arguments.query }); }\"\n}\n```\n\nThe endpoint runs on its **own isolated tool registry** — the *only* host tool its\nscript can reach is `search_semantic`, and the host **force-injects** the endpoint's\n`bucket_name` + `key_prefix` on top of whatever the script passes. A script can never\nwiden its own reach: even if it asks for `key_prefix: \"other/\"`, it still only searches\n`wiki/`. That guarantee is enforced at the host bridge *and* the Qdrant filter, not by\ncapabilities.\n\nServe it two ways:\n\n- **`POST /mcp/e/acme-handbook`** — under a workspace bearer token; the caller's\n  workspace decides which endpoints are reachable.\n- **`POST /mcp/s/{token}`** — **public, no login.** Mint the token with\n  `POST /mcp-endpoints/{id}/token` (`ttl_days`, default 90, range 1–365); it returns\n  `{ token, path, expires_at }`. The signed token carries `{ workspace, endpoint,\n  expiry }`; anything bad, expired, or disabled is an opaque 404. Hand this URL to an\n  external assistant to give it read-only, wiki-scoped RAG.\n\n## Putting it together\n\nStage 1 (scheduled clone) keeps the mirror fresh → Stage 2 (per-file events) keeps the\nindex in sync → Stage 3 (scoped endpoint) serves it. Point an MCP-speaking assistant at\n`/mcp/s/{token}` and it can answer from the handbook and nothing else.\n"
+  }
+]

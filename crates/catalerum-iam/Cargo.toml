@@ -1,0 +1,27 @@
+[package]
+name = "catalerum-iam"
+description = "catalerum: workspaces, users, SSO + dev-login, sessions, capabilities, grants"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
+catalerum-store = { version = "0.1.0", path = "../catalerum-store" }
+chrono = { version = "0.4.45", features = ["serde"] }
+# OIDC id-token / JWKS validation (SOUL §18, the SSO first cut). RS256/ES256
+# signature verification + iss/aud/exp/iat claim checks against a fetched JWKS.
+jsonwebtoken = "9.3"
+rand = "0.10.1"
+# OIDC discovery / JWKS / token-endpoint HTTP (SOUL §18). Reuses the workspace's
+# HTTP client (the same reqwest 0.13 the fetch/graph/vector/calendar crates use).
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "form", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.10.9"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "uuid", "chrono", "json"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+uuid = { version = "1.23.3", features = ["v4", "serde"] }

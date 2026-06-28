@@ -1,0 +1,14 @@
+[package]
+name = "catalerum-all-in-one"
+description = "single-container supervisor for catalerum, llmleaf, qdrant, preview and web routing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1.0.102"
+ring = "0.17.14"
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

@@ -1,0 +1,23 @@
+[server]
+listen = "127.0.0.1:8088"
+
+[[providers]]
+name = "echo-base"
+kind = "echo"
+
+[[routes]]
+model = "echo"
+targets = [{ provider = "echo-base", model = "echo" }]
+
+[[keys]]
+id = "catalerum-dev"
+# sha512-crypt for the all-in-one API's `all-in-one` consumer password.
+pw_hash = "$6$catalerum$sDLITruNEXx6wMgxIXLSV/qjzkK5yw.Ge6vd2e2ZUDpPkY6OASaW8uo6MvBHCHHkanh/17bw5DmRIpMBB1T3o1"
+name = "catalerum all-in-one"
+allowed_models = ["*"]
+
+[control.topology]
+url = "http://127.0.0.1:8787/internal/llmleaf/topology"
+credential = "env:LLMLEAF_CONTROL_TOKEN"
+refresh_secs = 5
+timeout_ms = 2000
