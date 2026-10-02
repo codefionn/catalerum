@@ -127,6 +127,7 @@ mod tool_index;
 mod tools;
 mod trigger_link;
 mod ui_runtime;
+mod weekly_planner;
 
 pub use action_runner::ToolActionRunner;
 pub use auth::Auth;
@@ -262,6 +263,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::links::router())
         .merge(routes::skills::router())
         .merge(routes::tasks::router())
+        .merge(routes::weekly_plans::router())
         .merge(routes::memory::router())
         .merge(routes::settings::router())
         .merge(routes::onboarding::router());

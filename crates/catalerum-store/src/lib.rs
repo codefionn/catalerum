@@ -37,6 +37,7 @@ pub mod repo;
 pub mod rows;
 pub mod secret;
 pub mod sql;
+pub mod weekly_plans;
 
 pub use error::{Result, StoreError};
 pub use pool::{
@@ -73,6 +74,9 @@ pub use rows::{
     WorkspaceSandboxRow,
 };
 pub use secret::{SecretStore, MASTER_KEY_LEN};
+pub use weekly_plans::{
+    PlanEntryInput, PlanEventLink, PlanInput, WeeklyPlanRepo, DEFAULT_PLAN_LINK_LIMIT,
+};
 pub use sql::{
     run_ddl_batch as sql_run_ddl_batch, run_read as sql_run_read, run_sql_script as sql_run_script,
     run_write as sql_run_write,
@@ -335,6 +339,13 @@ impl Store {
     #[must_use]
     pub fn boards(&self) -> BoardRepo {
         BoardRepo::new(self.pool.clone())
+    }
+
+    /// Weekly plans repository — reusable week templates + their links to the
+    /// calendar events they materialised (SOUL §8).
+    #[must_use]
+    pub fn weekly_plans(&self) -> WeeklyPlanRepo {
+        WeeklyPlanRepo::new(self.pool.clone())
     }
 
     /// Tasks repository — Kanban tasks (SOUL §24).

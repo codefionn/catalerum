@@ -63,6 +63,7 @@ pub(crate) mod voice;
 /// Small shared widgets: checklist + chip input (Profiles/Skills) and the
 /// `row_action` edit/delete icon button (chat/calendar/notes rows).
 pub(crate) mod widgets;
+pub mod weekly_plans;
 pub mod workspace;
 
 pub use automations::AutomationsPanel;

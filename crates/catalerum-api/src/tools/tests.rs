@@ -6640,3 +6640,182 @@ async fn app_data_shell_suite_shares_namespace() {
         "name-form app_ref must still share the shell namespace"
     );
 }
+
+#[tokio::test]
+async fn weekly_plan_tools_apply_reapply_and_unapply() {
+    let Some(url) = db_url() else {
+        eprintln!("skipping weekly plan tools test: set CATALERUM_TEST_DATABASE_URL or DATABASE_URL");
+        return;
+    };
+    let store = Store::connect(&url).await.expect("store");
+    let ws = store
+        .workspaces()
+        .create("plans", &format!("plans-{}", uuid::Uuid::new_v4()))
+        .await
+        .expect("ws");
+    let ctx = ToolContext {
+        workspace_id: Some(ws.id),
+        ..Default::default()
+    };
+    let ingest = NoteIngest::new(store.clone(), false, false);
+    let create = CreateWeeklyPlanTool {
+        store: store.clone(),
+    };
+    let edit = EditWeeklyPlanTool {
+        store: store.clone(),
+    };
+    let apply = ApplyWeeklyPlanTool {
+        store: store.clone(),
+        ingest: ingest.clone(),
+        secrets: None,
+    };
+    let unapply = UnapplyWeeklyPlanTool {
+        store: store.clone(),
+        ingest,
+        secrets: None,
+    };
+
+    let plan = create
+        .invoke(
+            json!({
+                "name": "Normal week",
+                "timezone": "Europe/Berlin",
+                "entries": [
+                    { "weekday": "monday", "start": "09:00", "end": "09:15", "summary": "Standup" },
+                    { "weekday": 2, "start": "18:00", "end": "19:30", "summary": "Gym", "labels": ["sport"] },
+                    { "weekday": "saturday", "all_day": true, "summary": "Hike" }
+                ]
+            }),
+            &ctx,
+        )
+        .await
+        .expect("create_weekly_plan");
+    assert_eq!(plan["entries"].as_array().unwrap().len(), 3);
+    // Nothing touches the calendar before applying.
+    let none = store
+        .events()
+        .list_by_workspace(ws.id, None, DateRange::default(), 100)
+        .await
+        .unwrap();
+    assert!(none.is_empty());
+
+    // Apply to the week containing Thursday 2026-10-08 (→ Monday 2026-10-05).
+    let out = apply
+        .invoke(json!({ "plan": "normal WEEK", "week_start": "2026-10-08" }), &ctx)
+        .await
+        .expect("apply");
+    assert_eq!(out["weeks"][0]["week_start"], json!("2026-10-05"));
+    assert_eq!(out["weeks"][0]["created"], json!(3));
+    let events = store
+        .events()
+        .list_by_workspace(ws.id, None, DateRange::default(), 100)
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 3);
+    let standup = events.iter().find(|e| e.summary == "Standup").unwrap();
+    // 09:00 Berlin (CEST, +02:00) on Monday 2026-10-05.
+    assert_eq!(standup.start, "2026-10-05T07:00:00Z".parse::<chrono::DateTime<chrono::Utc>>().unwrap());
+    let hike = events.iter().find(|e| e.summary == "Hike").unwrap();
+    assert!(hike.all_day);
+    assert_eq!(hike.start, "2026-10-10T00:00:00Z".parse::<chrono::DateTime<chrono::Utc>>().unwrap());
+    // Every applied event is linked back to the plan.
+    for e in &events {
+        assert!(store.weekly_plans().link_for_event(ws.id, e.id).await.unwrap().is_some());
+    }
+
+    // Re-apply is idempotent: no duplicates, nothing rewritten.
+    let again = apply
+        .invoke(json!({ "plan": "Normal week", "week_start": "2026-10-05" }), &ctx)
+        .await
+        .expect("re-apply");
+    assert_eq!(again["weeks"][0]["created"], json!(0));
+    assert_eq!(again["weeks"][0]["unchanged"], json!(3));
+
+    // A hand-made event in the same week is never touched by the plan.
+    let cal = store
+        .calendars()
+        .upsert_local(ws.id, "default", "Calendar")
+        .await
+        .unwrap();
+    let manual = store
+        .events()
+        .create(&UpsertEvent::new(
+            ws.id,
+            cal.id,
+            "manual",
+            "Dentist",
+            "2026-10-06T08:00:00Z".parse().unwrap(),
+            "2026-10-06T09:00:00Z".parse().unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    // Edit: move the gym slot, drop the hike → re-apply updates in place and
+    // removes the orphaned event.
+    let listed = ListWeeklyPlansTool {
+        store: store.clone(),
+    }
+    .invoke(json!({ "plan": "Normal week" }), &ctx)
+    .await
+    .expect("list");
+    assert_eq!(listed["applied_weeks"][0]["events"], json!(3));
+    let entries = listed["entries"].as_array().unwrap();
+    let id_of = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e["summary"] == json!(name))
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    edit.invoke(
+        json!({
+            "plan": "Normal week",
+            "update_entries": [{ "id": id_of("Gym"), "weekday": "thursday" }],
+            "remove_entries": [id_of("Hike")]
+        }),
+        &ctx,
+    )
+    .await
+    .expect("edit");
+    let gym_before = events.iter().find(|e| e.summary == "Gym").unwrap().id;
+    let re = apply
+        .invoke(json!({ "plan": "Normal week", "week_start": "2026-10-05" }), &ctx)
+        .await
+        .expect("re-apply after edit");
+    assert_eq!(re["weeks"][0]["updated"], json!(1));
+    assert_eq!(re["weeks"][0]["removed"], json!(1));
+    assert_eq!(re["weeks"][0]["unchanged"], json!(1));
+    let gym = store.events().get(ws.id, gym_before).await.expect("same gym event");
+    assert_eq!(gym.start, "2026-10-08T16:00:00Z".parse::<chrono::DateTime<chrono::Utc>>().unwrap());
+    assert!(store.events().get(ws.id, hike.id).await.is_err(), "hike removed");
+
+    // Unapply removes exactly the plan's events; the manual one survives.
+    let un = unapply
+        .invoke(json!({ "plan": "Normal week", "week_start": "2026-10-11" }), &ctx)
+        .await
+        .expect("unapply");
+    assert_eq!(un["week"]["removed"], json!(2));
+    let left = store
+        .events()
+        .list_by_workspace(ws.id, None, DateRange::default(), 100)
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id, manual.id);
+
+    // Bad inputs are rejected up front.
+    assert!(apply
+        .invoke(json!({ "plan": "Nope", "week_start": "2026-10-05" }), &ctx)
+        .await
+        .is_err());
+    assert!(apply
+        .invoke(json!({ "plan": "Normal week", "week_start": "05.10.2026" }), &ctx)
+        .await
+        .is_err());
+    assert!(create
+        .invoke(json!({ "name": "Bad", "timezone": "Mars/Base" }), &ctx)
+        .await
+        .is_err());
+}

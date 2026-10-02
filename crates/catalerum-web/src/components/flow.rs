@@ -4640,6 +4640,9 @@ const KNOWN_TOOLS: &[(&str, &[&str])] = &[
             "update_event",
             "delete_event",
             "read_event",
+            "list_weekly_plans",
+            "apply_weekly_plan",
+            "unapply_weekly_plan",
         ],
     ),
     (

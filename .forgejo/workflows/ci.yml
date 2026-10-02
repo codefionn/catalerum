@@ -1,0 +1,209 @@
+# =============================================================================
+# catalerum CI for Forgejo Actions — the counterpart of .gitlab-ci.yml.
+# lint / build / test / publish, driven by `docker buildx bake`
+# (docker-bake.hcl + Dockerfile).
+#
+# On the default branch and on git tags, the release images are published to
+# registry.k3s.s.fionn-router.internal/catalerum/* as multi-arch manifests
+# (PLATFORMS). The Rust binary is cross-compiled on the build host (Dockerfile
+# `build-base` stage), so only the `sandbox` and `preview` targets (whose apt
+# layers run target-arch binaries) need QEMU binfmt, registered before baking.
+#
+# --- Runner requirements -----------------------------------------------------
+# Jobs run on a forgejo-runner label `docker` and talk to a `docker:27-dind`
+# service container, which must run privileged. Enable that in the runner's
+# config.yml:
+#     container:
+#       privileged: true
+#
+# --- Required secrets (repo/org Settings > Actions > Secrets) -----------------
+#   REGISTRY_USER       username for registry.k3s.s.fionn-router.internal
+#   REGISTRY_PASSWORD   its password / token
+#   REGISTRY_CA_CERT    PEM of the internal fionn-router root CA (optional when
+#                       the runner mounts it at $REGISTRY_CA_FILE instead)
+#
+# Image/cache references must be a bare host (no https://) — a scheme makes
+# buildx fail with "invalid reference format". Full refs are always assembled
+# in-script as $REGISTRY/<name> so a ref can never silently lose its host.
+#
+# TLS: the registry serves a cert from the internal CA. A buildkitd.toml is
+# generated per job that points the docker-container builder at that CA (buildx
+# copies the referenced file into the builder), mirroring .gitlab/buildkitd.toml.
+# Registry credentials are written straight into ~/.docker/config.json rather
+# than via `docker login`, so the dind daemon itself never has to trust the CA.
+# =============================================================================
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  pull_request:
+
+env:
+  REGISTRY: registry.k3s.s.fionn-router.internal
+  # Harbor references are <host>/<project>/<repo>; images live in the
+  # "catalerum" project. NAME variables are host-less on purpose (see header).
+  IMAGE_NAME: catalerum/catalerum
+  WEB_IMAGE_NAME: catalerum/catalerum-web
+  OPERATOR_IMAGE_NAME: catalerum/catalerum-operator
+  PREVIEW_IMAGE_NAME: catalerum/catalerum-preview
+  SANDBOX_IMAGE_NAME: catalerum/catalerum-sandbox
+  # Fallback CA location when the REGISTRY_CA_CERT secret is not set.
+  REGISTRY_CA_FILE: /etc/forgejo-runner/certs/ca.crt
+  # dind wiring: TLS disabled, the service is only reachable on the job network.
+  DOCKER_HOST: tcp://docker:2375
+  BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    # TEMP: skipped for now, mirroring .gitlab-ci.yml — drop this `if` to re-enable.
+    if: ${{ false }}
+    runs-on: docker
+    container:
+      image: docker:27
+    services:
+      docker:
+        image: docker:27-dind
+        env:
+          DOCKER_TLS_CERTDIR: ""
+    env:
+      CACHE_REF: registry.k3s.s.fionn-router.internal/catalerum/catalerum:cache-lint
+    steps:
+      - name: Install checkout prerequisites
+        run: apk add --no-cache bash git nodejs
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: Set up buildx builder + registry auth
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_CA_CERT: ${{ secrets.REGISTRY_CA_CERT }}
+        run: .forgejo/setup-buildx.sh
+      - run: docker buildx bake -f docker-bake.hcl lint
+
+  build:
+    # TEMP: skipped for now, mirroring .gitlab-ci.yml — drop this `if` to re-enable.
+    if: ${{ false }}
+    runs-on: docker
+    container:
+      image: docker:27
+    services:
+      docker:
+        image: docker:27-dind
+        env:
+          DOCKER_TLS_CERTDIR: ""
+    env:
+      CACHE_REF: registry.k3s.s.fionn-router.internal/catalerum/catalerum:cache-build
+      # Cross-compile every published arch so publish's bake is a cache hit.
+      # Must stay in sync with publish's PLATFORMS.
+      PLATFORMS: linux/amd64,linux/arm64
+    steps:
+      - name: Install checkout prerequisites
+        run: apk add --no-cache bash git nodejs
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: Set up buildx builder + registry auth
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_CA_CERT: ${{ secrets.REGISTRY_CA_CERT }}
+        run: .forgejo/setup-buildx.sh
+      # QEMU binfmt for the sandbox/preview foreign-arch apt layers.
+      - run: docker run --rm --privileged tonistiigi/binfmt --install arm64
+      - run: docker buildx bake -f docker-bake.hcl app web operator preview sandbox
+
+  test:
+    # TEMP: skipped for now, mirroring .gitlab-ci.yml — drop this `if` to re-enable.
+    if: ${{ false }}
+    runs-on: docker
+    container:
+      image: docker:27
+    services:
+      docker:
+        image: docker:27-dind
+        env:
+          DOCKER_TLS_CERTDIR: ""
+    env:
+      CACHE_REF: registry.k3s.s.fionn-router.internal/catalerum/catalerum:cache-test
+    steps:
+      - name: Install checkout prerequisites
+        run: apk add --no-cache bash git nodejs
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: Set up buildx builder + registry auth
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_CA_CERT: ${{ secrets.REGISTRY_CA_CERT }}
+        run: .forgejo/setup-buildx.sh
+      - run: docker buildx bake -f docker-bake.hcl test
+
+  publish:
+    # Default-branch pushes and tags only (never pull requests).
+    if: >-
+      github.event_name == 'push' && (
+        github.ref_type == 'tag' ||
+        github.ref_name == github.event.repository.default_branch
+      )
+    runs-on: docker
+    container:
+      image: docker:27
+    services:
+      docker:
+        image: docker:27-dind
+        env:
+          DOCKER_TLS_CERTDIR: ""
+    env:
+      CACHE_REF: registry.k3s.s.fionn-router.internal/catalerum/catalerum:cache-build # reuse build's cache
+      PLATFORMS: linux/amd64,linux/arm64 # must match build's PLATFORMS
+    steps:
+      - name: Install checkout prerequisites
+        run: apk add --no-cache bash git nodejs
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: Set up buildx builder + registry auth
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_CA_CERT: ${{ secrets.REGISTRY_CA_CERT }}
+        run: .forgejo/setup-buildx.sh
+      - name: Publish images
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # Immutable sha tag + a moving ref-slug tag; :latest on the default
+          # branch; the tag name (+:latest) for git tags — same scheme as GitLab.
+          short_sha="${SHA:0:8}"
+          ref_slug="$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-63 | sed -E 's/-+$//')"
+          tags_for() {
+            local image="$REGISTRY/$1"
+            if [ "$REF_TYPE" = "tag" ]; then
+              printf '%s' "$image:$REF_NAME,$image:latest"
+            elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+              printf '%s' "$image:sha-$short_sha,$image:$ref_slug,$image:latest"
+            else
+              printf '%s' "$image:sha-$short_sha,$image:$ref_slug"
+            fi
+          }
+          export TAGS="$(tags_for "$IMAGE_NAME")"
+          export WEB_TAGS="$(tags_for "$WEB_IMAGE_NAME")"
+          export OPERATOR_TAGS="$(tags_for "$OPERATOR_IMAGE_NAME")"
+          export PREVIEW_TAGS="$(tags_for "$PREVIEW_IMAGE_NAME")"
+          export SANDBOX_TAGS="$(tags_for "$SANDBOX_IMAGE_NAME")"
+          echo "publishing $TAGS + $WEB_TAGS + $OPERATOR_TAGS + $PREVIEW_TAGS + $SANDBOX_TAGS"
+          # binfmt for the sandbox/preview foreign-arch layers (fresh dind per job).
+          docker run --rm --privileged tonistiigi/binfmt --install arm64
+          docker buildx bake -f docker-bake.hcl app web operator preview sandbox --push

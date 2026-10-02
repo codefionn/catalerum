@@ -49,7 +49,7 @@ pub use id::{
     CalendarId, ChannelId, ChunkId, ColumnId, ComputerAgentId, ConnectionId, ConversationId,
     DocumentId, EmailId, EntityId, EventId, GrantId, LinkId, MailboxId, McpEndpointId, McpServerId,
     MemoryId, MessageId, NoteId, ObjectId, ObjectLabelId, OrganisationId, PendingApprovalId,
-    SkillId, TaskId, TerminalSessionId, UserId, WorkspaceId,
+    SkillId, TaskId, TerminalSessionId, UserId, WeeklyPlanEntryId, WeeklyPlanId, WorkspaceId,
 };
 
 pub use computer::{
@@ -65,7 +65,8 @@ pub use model::{
     McpAuthSpec, McpServerDef, Membership, Memory, MemoryScope, Message, MessageRole, Note,
     ObjectLabel, OrgMembership, OrgRole, Organisation, Origin, Profile, Role, RunStatus, Skill,
     SkillInvocation, SourceRef, StepStatus, StoredObject, Subject, Task, TaskStatus,
-    TerminalSession, TerminalSessionStatus, ToolCall, UiDefinition, User, Workspace,
+    TerminalSession, TerminalSessionStatus, ToolCall, UiDefinition, User, WeeklyPlan,
+    WeeklyPlanApplication, WeeklyPlanEntry, Workspace,
 };
 
 pub use id::UiDefinitionId;

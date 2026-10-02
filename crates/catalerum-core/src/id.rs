@@ -272,6 +272,16 @@ id_type!(
     /// the row is workspace- and owner-scoped.
     ComputerAgentId
 );
+id_type!(
+    /// Identifies a [`WeeklyPlan`](crate::model::WeeklyPlan) — a reusable weekly
+    /// schedule template that is applied to concrete calendar weeks (SOUL §8).
+    WeeklyPlanId
+);
+id_type!(
+    /// Identifies a [`WeeklyPlanEntry`](crate::model::WeeklyPlanEntry) — one
+    /// recurring slot (weekday + time) inside a weekly plan.
+    WeeklyPlanEntryId
+);
 
 #[cfg(test)]
 mod tests {
