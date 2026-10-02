@@ -35,9 +35,13 @@ variable "CACHE_REF"       { default = "" }
 # cross-compiles each platform ON the build host — no QEMU on the builder.
 variable "PLATFORMS"       { default = "" }
 
+# Cargo compilation concurrency. Override with the environment or --set.
+variable "CARGO_BUILD_JOBS" { default = "2" }
+
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
+  args       = { CARGO_BUILD_JOBS = CARGO_BUILD_JOBS }
   cache-from = CACHE_REF != "" ? ["type=registry,ref=${CACHE_REF}"] : []
   cache-to   = CACHE_REF != "" ? ["type=registry,ref=${CACHE_REF},mode=max"] : []
 }

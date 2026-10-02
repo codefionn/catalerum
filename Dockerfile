@@ -24,6 +24,9 @@
 # a reproducible toolchain. Debian 12 (bookworm) glibc matches the distroless
 # runtime below.
 FROM --platform=$BUILDPLATFORM rust:slim-bookworm AS base
+# Bound compilation memory use across native, cross and wasm builds.
+ARG CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
 # System build deps:
 #   protobuf-compiler                     -> protoc, for prost-build (llmleaf-client build.rs)
 #   cmake clang libclang-dev build-essential -> aws-lc-sys (rustls crypto pulled by aws-sdk-s3)

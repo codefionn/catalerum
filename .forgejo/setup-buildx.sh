@@ -47,6 +47,9 @@ chmod 600 "$HOME/.docker/config.json"
 # buildkitd config (mirrors .gitlab/buildkitd.toml): buildx copies the referenced
 # CA into the builder container so BuildKit pushes over verified TLS.
 cat > "$work/buildkitd.toml" <<TOML
+[worker.oci]
+  max-parallelism = 2
+
 [registry."$REGISTRY"]
   http = false
   ca = ["$ca_file"]
