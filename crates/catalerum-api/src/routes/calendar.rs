@@ -410,7 +410,7 @@ fn clean(value: Option<&String>) -> Option<&str> {
 /// Normalize event labels: trim, drop blanks, and dedup case-insensitively
 /// (keeping the first-seen casing). Mirrors how the graph projection derives a
 /// `:Topic` per label, so what is stored matches what is projected.
-fn clean_labels(labels: &[String]) -> Vec<String> {
+pub(crate) fn clean_labels(labels: &[String]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     labels
         .iter()

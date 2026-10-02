@@ -1004,6 +1004,109 @@ pub struct Task {
 }
 
 // ---------------------------------------------------------------------------
+// Weekly plans (reusable week templates applied to calendars)
+// ---------------------------------------------------------------------------
+
+/// Minutes in a day — the exclusive upper bound of a [`WeeklyPlanEntry`]'s
+/// `end_minute` (an entry ending at midnight has `end_minute == 1440`).
+pub const MINUTES_PER_DAY: i32 = 24 * 60;
+
+/// A reusable **weekly plan** (SOUL §8): a named template of recurring slots
+/// (weekday + wall-clock time) that is *applied* to a concrete calendar week,
+/// materialising one real [`Event`] per entry. Several plans can coexist (e.g.
+/// "Normal week", "Exam week") and each is edited independently of the weeks it
+/// was applied to. Every event an application creates stays **linked** to its
+/// plan + entry + week, so re-applying updates those events in place and
+/// un-applying removes exactly them.
+///
+/// Times are wall-clock in [`timezone`](Self::timezone) (an IANA name), so a
+/// 09:00 slot stays 09:00 across a DST change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WeeklyPlan {
+    pub id: WeeklyPlanId,
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Default calendar the plan's events are written to (an entry may
+    /// override it). `None` = the workspace's default local calendar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_id: Option<CalendarId>,
+    /// IANA timezone the entries' wall-clock times are interpreted in.
+    pub timezone: String,
+    /// The plan's slots, ordered by weekday then start time.
+    #[serde(default)]
+    pub entries: Vec<WeeklyPlanEntry>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// One recurring slot of a [`WeeklyPlan`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WeeklyPlanEntry {
+    pub id: WeeklyPlanEntryId,
+    pub plan_id: WeeklyPlanId,
+    /// Day of the week, ISO order: `0` = Monday … `6` = Sunday.
+    pub weekday: i32,
+    /// Start, minutes after local midnight (`0..1440`). Ignored when `all_day`.
+    pub start_minute: i32,
+    /// End, minutes after local midnight (`start_minute < end_minute <= 1440`).
+    /// Ignored when `all_day`.
+    pub end_minute: i32,
+    #[serde(default)]
+    pub all_day: bool,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Per-entry calendar override of [`WeeklyPlan::calendar_id`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_id: Option<CalendarId>,
+}
+
+impl WeeklyPlanEntry {
+    /// Validate an entry's slot: weekday in `0..=6` and, for a timed entry,
+    /// `0 <= start_minute < end_minute <= 1440`. Returns a human-readable reason
+    /// on failure. Shared by the REST routes and the LLM tools.
+    pub fn validate_slot(
+        weekday: i32,
+        start_minute: i32,
+        end_minute: i32,
+        all_day: bool,
+    ) -> std::result::Result<(), String> {
+        if !(0..=6).contains(&weekday) {
+            return Err("`weekday` must be 0 (Monday) … 6 (Sunday)".to_string());
+        }
+        if all_day {
+            return Ok(());
+        }
+        if !(0..MINUTES_PER_DAY).contains(&start_minute) {
+            return Err("`start` must be between 00:00 and 23:59".to_string());
+        }
+        if end_minute <= start_minute || end_minute > MINUTES_PER_DAY {
+            return Err("`end` must be after `start` and no later than 24:00".to_string());
+        }
+        Ok(())
+    }
+}
+
+/// One week a [`WeeklyPlan`] has been applied to: the Monday that week starts
+/// on and how many linked events currently live in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WeeklyPlanApplication {
+    pub plan_id: WeeklyPlanId,
+    /// The Monday (`YYYY-MM-DD`) the applied week starts on.
+    pub week_start: chrono::NaiveDate,
+    /// Linked events currently in that week.
+    pub event_count: i64,
+    /// When the week was most recently (re-)applied.
+    pub applied_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
 // Channels & conversations
 // ---------------------------------------------------------------------------
 

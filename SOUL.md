@@ -319,6 +319,21 @@ persists them. Until such an automation exists the connection is **dormant** (no
 distinct `CalendarEvent { lead }` trigger is a *reminder* that fires before an **already-written**
 event — so it only sees what a `WriteEvent` action stored.
 
+**Weekly plans** are reusable week templates (`weekly_plans` + `weekly_plan_entries`): a named
+set of slots — weekday + `HH:MM`–`HH:MM` (or all-day) wall-clock in the plan's IANA timezone,
+with a default target calendar and per-slot overrides. Many plans coexist ("Normal week",
+"Exam week") and are edited (or duplicated for a one-off week) without touching the calendar.
+**Applying** a plan to a week materialises one real event per slot through the same local /
+provider write-back seam as every event write, and records a **link** row per event
+(`weekly_plan_events`: event ⇄ plan + entry + week). Apply is a *sync*, not an append
+(§3.4): re-applying a week updates its linked events in place, recreates one whose slot moved
+calendar, and removes events whose slot was deleted; **unapply** deletes exactly the linked
+events. Hand-made events are never touched; FKs keep links honest (event deleted → link gone,
+entry deleted → orphan cleaned on the next re-apply, plan deleted → events stay, unlinked). One
+engine (`catalerum-api::weekly_planner`) backs the `/weekly-plans` REST routes, the
+`*_weekly_plan(s)` tools, and the Calendar panel's **Plans** tab (whose events carry a plan
+badge); everything is gated on the `calendar` domain.
+
 ## 9. Storage backends (`catalerum-storage`)
 
 One `StorageBackend` trait per backend (FS / S3-Swift / WebDAV), optional `MultiBackend`.

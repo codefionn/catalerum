@@ -490,6 +490,35 @@ pub(crate) fn build_registry(
     registry.register(Arc::new(SearchEventsTool {
         store: store.clone(),
     }));
+    // Weekly-plan tools (SOUL §8) — reusable week templates applied to the
+    // calendar through the shared `weekly_planner` engine (same code path as the
+    // `/weekly-plans` REST routes). Reads gated `calendar:read`, the rest
+    // `calendar:write`; apply/unapply carry `secrets` for provider write-back.
+    registry.register(Arc::new(ListWeeklyPlansTool {
+        store: store.clone(),
+    }));
+    registry.register(Arc::new(CreateWeeklyPlanTool {
+        store: store.clone(),
+    }));
+    registry.register(Arc::new(EditWeeklyPlanTool {
+        store: store.clone(),
+    }));
+    registry.register(Arc::new(DuplicateWeeklyPlanTool {
+        store: store.clone(),
+    }));
+    registry.register(Arc::new(ApplyWeeklyPlanTool {
+        store: store.clone(),
+        ingest: ingest.clone(),
+        secrets: secrets.clone(),
+    }));
+    registry.register(Arc::new(UnapplyWeeklyPlanTool {
+        store: store.clone(),
+        ingest: ingest.clone(),
+        secrets: secrets.clone(),
+    }));
+    registry.register(Arc::new(DeleteWeeklyPlanTool {
+        store: store.clone(),
+    }));
     // Task tools (SOUL §24) — always available, thin board/task repo clients.
     // Board- and column-addressing is by *name* (or id) via `resolve_board_arg`
     // / `resolve_column_arg`, so chat can act on "the Sprint board" directly.
@@ -845,6 +874,7 @@ mod storage;
 mod time;
 mod ui;
 mod util;
+mod weekly_plans;
 pub(crate) use self::agent_profiles::*;
 pub(crate) use self::app_data::*;
 pub(crate) use self::ask_user::*;
@@ -870,6 +900,7 @@ pub(crate) use self::storage::*;
 pub(crate) use self::time::*;
 pub(crate) use self::ui::*;
 pub(crate) use self::util::*;
+pub(crate) use self::weekly_plans::*;
 
 #[cfg(test)]
 mod tests;

@@ -1814,6 +1814,81 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 .cal-source-state { flex-shrink: 0; font-size: .68rem; color: var(--muted); }
 .cal-source-synced { color: var(--accent); }
 
+/* --- Calendar: weekly plans (the "Plans" tab, weekly_plans.rs) --- */
+.cal-event-plan {
+  font-size: .72rem; padding: 0 .4rem; border-radius: 999px;
+  border: 1px solid var(--accent-2); color: var(--accent);
+}
+.wp { display: flex; flex-direction: column; gap: 1rem; max-width: 1100px; }
+.wp-bar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.wp-plan-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.wp-plan-tab { border: 1px solid var(--border); display: inline-flex; align-items: center; gap: .4rem; }
+.wp-count {
+  font-size: .7rem; min-width: 1.2rem; padding: 0 .3rem; border-radius: 999px;
+  background: var(--panel); color: var(--muted); text-align: center;
+}
+.wp-msg { margin: 0; }
+.wp-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  padding: .8rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.wp-fields { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
+.wp-fields .cal-field { min-width: 150px; }
+.wp-desc { flex: 1; min-width: 220px; }
+.wp-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.wp-danger { color: var(--err-fg); }
+.wp-danger:hover:not(:disabled) { border-color: var(--err-border); }
+.wp-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .5rem; }
+.wp-day {
+  display: flex; flex-direction: column; min-height: 140px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.wp-day-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .4rem .55rem; border-bottom: 1px solid var(--border);
+  font-size: .78rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .5px;
+}
+.wp-add {
+  background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+  width: 22px; height: 22px; padding: 0; font: inherit; line-height: 1; cursor: pointer;
+}
+.wp-add:hover { color: var(--fg); border-color: var(--accent); }
+.wp-entries { list-style: none; margin: 0; padding: .4rem; display: flex; flex-direction: column; gap: .35rem; }
+.wp-entry {
+  display: flex; flex-direction: column; gap: .1rem; padding: .35rem .45rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--accent-2);
+  border-radius: 7px; font-size: .8rem;
+}
+.wp-entry-time { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.wp-entry-title { font-weight: 600; overflow-wrap: anywhere; }
+.wp-entry-meta { color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
+.wp-entry-acts { display: flex; gap: .2rem; justify-content: flex-end; }
+.wp-entry-form { border: 1px solid var(--border); border-radius: 10px; }
+.wp-check { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; padding-bottom: .5rem; }
+.wp-apply {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .8rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.wp-h { margin: .2rem 0 0; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .6px; }
+.wp-apply-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.wp-week-title { font-size: .85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wp-weeks { width: 4.5rem; }
+.wp-hint { margin: 0; color: var(--muted); }
+.wp-apps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.wp-app {
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  padding: .45rem .6rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.wp-app-title { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wp-app-acts { margin-left: auto; display: flex; gap: .35rem; flex-wrap: wrap; }
+@media (max-width: 900px) {
+  .wp-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .wp-week { grid-template-columns: minmax(0, 1fr); }
+  .wp-day { min-height: 0; }
+}
+
 /* --- Calendar: view switcher + grid navigation --- */
 .cal-viewbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;

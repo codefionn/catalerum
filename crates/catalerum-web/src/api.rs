@@ -90,6 +90,12 @@ pub const CALENDARS_PATH: &str = "/calendars";
 /// REST path: list events (optionally date/calendar-filtered).
 pub const EVENTS_PATH: &str = "/events";
 
+/// REST path: list / create weekly plans (and `/weekly-plans/{id}/…`).
+pub const WEEKLY_PLANS_PATH: &str = "/weekly-plans";
+
+/// REST path: event → weekly-plan links (which events a plan materialised).
+pub const WEEKLY_PLAN_LINKS_PATH: &str = "/weekly-plan-links";
+
 /// REST path: list / create markdown notes (and `/notes/{id}` for one note).
 pub const NOTES_PATH: &str = "/notes";
 
@@ -1176,6 +1182,124 @@ impl Calendar {
     pub fn is_writable(&self) -> bool {
         !self.read_only
     }
+}
+
+/// A weekly plan — a reusable week template applied to calendar weeks
+/// (matches the API's core `WeeklyPlan`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct WeeklyPlan {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Default target calendar (`None` = the default local calendar).
+    #[serde(default)]
+    pub calendar_id: Option<String>,
+    /// IANA timezone the entry times are wall-clock in.
+    pub timezone: String,
+    #[serde(default)]
+    pub entries: Vec<WeeklyPlanEntry>,
+}
+
+/// One slot of a [`WeeklyPlan`]. `weekday` 0 = Monday; times are minutes after
+/// local midnight.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct WeeklyPlanEntry {
+    pub id: String,
+    pub weekday: i32,
+    pub start_minute: i32,
+    pub end_minute: i32,
+    #[serde(default)]
+    pub all_day: bool,
+    pub summary: String,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub calendar_id: Option<String>,
+}
+
+/// A week a plan is applied to (matches the API's `WeeklyPlanApplication`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct WeeklyPlanApplication {
+    /// The Monday (`YYYY-MM-DD`) of the applied week.
+    pub week_start: String,
+    pub event_count: i64,
+    pub applied_at: String,
+}
+
+/// What one apply/unapply did to a week (matches the API's `WeekOutcome`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct WeekOutcome {
+    pub week_start: String,
+    #[serde(default)]
+    pub created: Vec<String>,
+    #[serde(default)]
+    pub updated: Vec<String>,
+    #[serde(default)]
+    pub unchanged: Vec<String>,
+    #[serde(default)]
+    pub removed: Vec<String>,
+}
+
+/// An event → plan link (matches the API's `PlanEventLink`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct PlanEventLink {
+    pub event_id: String,
+    pub plan_id: String,
+    #[serde(default)]
+    pub entry_id: Option<String>,
+    pub week_start: String,
+}
+
+/// Body for `POST /weekly-plans` / `PUT /weekly-plans/{id}` (header fields).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WeeklyPlanBody {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_id: Option<String>,
+    pub timezone: String,
+}
+
+/// Body for `POST /weekly-plans/{id}/entries` and `PUT …/entries/{entry_id}`.
+/// Times are `HH:MM`; omitted for an all-day entry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WeeklyPlanEntryBody {
+    pub weekday: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    pub all_day: bool,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_id: Option<String>,
+}
+
+/// Body for `POST /weekly-plans/{id}/duplicate`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DuplicateWeeklyPlan {
+    pub name: String,
+}
+
+/// Body for `POST /weekly-plans/{id}/apply` (and `/unapply`, which ignores
+/// `weeks`). `week_start` is any `YYYY-MM-DD` in the (first) target week.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ApplyWeeklyPlan {
+    pub week_start: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weeks: Option<u32>,
 }
 
 /// Request body for `POST /calendars` — create a local (database-native)

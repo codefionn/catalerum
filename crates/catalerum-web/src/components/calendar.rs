@@ -31,6 +31,7 @@ use crate::api::{
 };
 use crate::auth;
 use crate::components::icons::{Icon, MdIcon};
+use crate::components::weekly_plans::WeeklyPlansView;
 use crate::components::widgets::{
     attachment_href, attachment_is_image, attachment_label, is_safe_href, list_drawer_scrim,
     list_drawer_toggle, row_action, url_basename,
@@ -51,6 +52,8 @@ struct DayGroup {
 struct PlannerCalendars {
     names: RwSignal<HashMap<String, String>>,
     all: RwSignal<Vec<Calendar>>,
+    /// event id -> name of the weekly plan that created it.
+    plans: RwSignal<HashMap<String, String>>,
 }
 
 /// An edit session for the event form: which event a save `PUT`s, the fields
@@ -79,22 +82,25 @@ struct EditingEvent {
 /// Which calendar view the panel shows. The weekly planner (the default) is the
 /// primary interactive surface; the agenda is the only
 /// one with the From/To range filter; Month/Week/Day are grids driven by the
-/// `anchor` day-number and the prev/next/today navigation.
+/// `anchor` day-number and the prev/next/today navigation. Plans is not a
+/// date view: it manages reusable weekly plans and applies them to weeks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ViewMode {
     Agenda,
     Month,
     Week,
     Day,
+    Plans,
 }
 
 impl ViewMode {
     /// The view modes in toolbar order.
-    const ALL: [ViewMode; 4] = [
+    const ALL: [ViewMode; 5] = [
         ViewMode::Week,
         ViewMode::Day,
         ViewMode::Month,
         ViewMode::Agenda,
+        ViewMode::Plans,
     ];
 
     /// Tab label.
@@ -104,6 +110,7 @@ impl ViewMode {
             ViewMode::Month => "Month",
             ViewMode::Week => "Week",
             ViewMode::Day => "Day",
+            ViewMode::Plans => "Plans",
         }
     }
 
@@ -115,6 +122,7 @@ impl ViewMode {
             "month" => Some(ViewMode::Month),
             "week" => Some(ViewMode::Week),
             "day" => Some(ViewMode::Day),
+            "plans" => Some(ViewMode::Plans),
             _ => None,
         }
     }
@@ -139,7 +147,7 @@ fn calendar_state_from_path(path: &str) -> Option<(ViewMode, Option<i64>)> {
         return None;
     }
     let anchor = match (view, date) {
-        (ViewMode::Agenda, None) => None,
+        (ViewMode::Agenda | ViewMode::Plans, None) => None,
         (ViewMode::Month, Some(value)) => {
             let (year, month) = value.split_once('-')?;
             let year: i64 = year.parse().ok()?;
@@ -175,6 +183,7 @@ fn sync_location_to_calendar(view: ViewMode, anchor: i64) {
         }
         ViewMode::Week => format!("{CALENDAR_ROUTE}/week/{}", ymd_string(week_start(anchor))),
         ViewMode::Day => format!("{CALENDAR_ROUTE}/day/{}", ymd_string(anchor)),
+        ViewMode::Plans => format!("{CALENDAR_ROUTE}/plans"),
     };
     if let Ok(current) = window.location().pathname() {
         if current.trim_end_matches('/') == target {
@@ -193,6 +202,9 @@ pub fn CalendarPanel() -> impl IntoView {
     let events = RwSignal::new(Vec::<Event>::new());
     // calendar_id -> calendar name, for the per-event badge.
     let cal_names = RwSignal::new(HashMap::<String, String>::new());
+    // event_id -> weekly-plan name, for events a plan materialised (the plan
+    // badge / tooltip). Best-effort: empty when the links can't be loaded.
+    let plan_of_event = RwSignal::new(HashMap::<String, String>::new());
     // Every calendar, in full — drives the event-form picker and per-event
     // deletability (only local, writable calendars can be edited here).
     let calendars = RwSignal::new(Vec::<Calendar>::new());
@@ -390,6 +402,26 @@ pub fn CalendarPanel() -> impl IntoView {
                     cal_names.set(HashMap::new());
                     calendars.set(Vec::new());
                 }
+            }
+
+            // Weekly-plan links (best-effort): which events a plan created.
+            match (
+                rest::list_weekly_plan_links(tok).await,
+                rest::list_weekly_plans(tok).await,
+            ) {
+                (Ok(links), Ok(plans)) => {
+                    let names = plans
+                        .into_iter()
+                        .map(|p| (p.id, p.name))
+                        .collect::<HashMap<_, _>>();
+                    plan_of_event.set(
+                        links
+                            .into_iter()
+                            .filter_map(|l| Some((l.event_id, names.get(&l.plan_id)?.clone())))
+                            .collect(),
+                    );
+                }
+                _ => plan_of_event.set(HashMap::new()),
             }
 
             // Sources (best-effort, like calendars): the `/connections` list is
@@ -918,6 +950,7 @@ pub fn CalendarPanel() -> impl IntoView {
     // month, week → 7 days, day → 1 day); "Today" recenters on today. All
     // capture only `Copy` signals, so they compose into the button handlers.
     let is_agenda = move || view_mode.get() == ViewMode::Agenda;
+    let is_plans = move || view_mode.get() == ViewMode::Plans;
     let go_today = move || anchor.set(today);
     let go_prev = move || {
         anchor.update(|a| {
@@ -939,7 +972,7 @@ pub fn CalendarPanel() -> impl IntoView {
     };
     // The current range, as a heading next to the nav arrows.
     let nav_title = move || match view_mode.get() {
-        ViewMode::Agenda => String::new(),
+        ViewMode::Agenda | ViewMode::Plans => String::new(),
         ViewMode::Month => {
             let (y, m, _) = civil_from_days(anchor.get());
             format!("{} {y}", month_name(m))
@@ -1170,6 +1203,7 @@ pub fn CalendarPanel() -> impl IntoView {
                             ViewMode::Day => "Focus on one day at a time",
                             ViewMode::Month => "See the shape of your month",
                             ViewMode::Agenda => "Your events, grouped by day",
+                            ViewMode::Plans => "Reusable weekly plans you can apply to any week",
                         }}
                     </span>
                 </div>
@@ -1247,7 +1281,7 @@ pub fn CalendarPanel() -> impl IntoView {
                         })
                         .collect::<Vec<_>>()}
                 </div>
-                <Show when=move || !is_agenda() fallback=|| ().into_view()>
+                <Show when=move || !is_agenda() && !is_plans() fallback=|| ().into_view()>
                     // Title first, buttons last: the button cluster pins to the
                     // group's right edge so its screen position stays fixed as the
                     // title width changes across month/week/day views. Otherwise a
@@ -1835,7 +1869,10 @@ pub fn CalendarPanel() -> impl IntoView {
                 // only on a successful, finished load.
                 <Show
                     when=move || {
-                        !loading.get() && load_error.with(Option::is_none) && !is_agenda()
+                        !loading.get()
+                            && load_error.with(Option::is_none)
+                            && !is_agenda()
+                            && !is_plans()
                     }
                     fallback=|| ().into_view()
                 >
@@ -1857,6 +1894,7 @@ pub fn CalendarPanel() -> impl IntoView {
                                     PlannerCalendars {
                                         names: cal_names,
                                         all: calendars,
+                                        plans: plan_of_event,
                                     },
                                     open_create_at,
                                     start_edit,
@@ -1871,14 +1909,30 @@ pub fn CalendarPanel() -> impl IntoView {
                                     PlannerCalendars {
                                         names: cal_names,
                                         all: calendars,
+                                        plans: plan_of_event,
                                     },
                                     open_create_at,
                                     start_edit,
                                 )
                             }
-                            ViewMode::Agenda => ().into_any(),
+                            ViewMode::Agenda | ViewMode::Plans => ().into_any(),
                         }
                     }}
+                </Show>
+
+                // --- Weekly plans ---------------------------------------------
+                // Outside the grid closure above so the plans editor keeps its
+                // state while events reload after an apply.
+                <Show when=move || is_plans() fallback=|| ().into_view()>
+                    <WeeklyPlansView
+                        calendars=calendars
+                        today=today
+                        on_applied=refresh
+                        on_show_week=move |day: i64| {
+                            anchor.set(day);
+                            view_mode.set(ViewMode::Week);
+                        }
+                    />
                 </Show>
 
                 <Show
@@ -1928,7 +1982,9 @@ pub fn CalendarPanel() -> impl IntoView {
                                                     let on_edit = move || start_edit(edit_id.clone());
                                                     let id = e.id.clone();
                                                     let on_delete = move || delete_event(id.clone());
-                                                    event_row(&e, cal_name, writable, on_edit, on_delete)
+                                                    let plan = plan_of_event
+                                                        .with(|m| m.get(&e.id).cloned());
+                                                    event_row(&e, cal_name, plan, writable, on_edit, on_delete)
                                                 }
                                             />
                                         </ul>
@@ -1951,6 +2007,7 @@ pub fn CalendarPanel() -> impl IntoView {
 fn event_row(
     e: &Event,
     cal_name: Option<String>,
+    plan_name: Option<String>,
     writable: bool,
     on_edit: impl Fn() + 'static,
     on_delete: impl Fn() + 'static,
@@ -2054,6 +2111,11 @@ fn event_row(
                     >
                         <span class="cal-event-cal">{cal_name.clone().unwrap_or_default()}</span>
                     </Show>
+                    {plan_name.map(|p| view! {
+                        <span class="cal-event-plan" title="Created by this weekly plan (Calendar → Plans)">
+                            {format!("Plan: {p}")}
+                        </span>
+                    })}
                     {has_attachments.then(|| view! {
                         <span class="cal-event-attach-icon" title="Has attachments"><Icon icon=MdIcon::Attachment /></span>
                     })}
@@ -2444,7 +2506,7 @@ fn weekday_name(y: i64, m: u32, d: u32) -> Option<&'static str> {
 
 /// Day-number (days since 1970-01-01) for a `(year, month, day)`. Exact for any
 /// proleptic-Gregorian date; `month` is 1..=12, `day` is 1..=31.
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let m = i64::from(m);
     let d = i64::from(d);
     let y = if m <= 2 { y - 1 } else { y };
@@ -2483,12 +2545,12 @@ fn monday_index(z: i64) -> i64 {
 }
 
 /// The Monday starting the week containing `z`.
-fn week_start(z: i64) -> i64 {
+pub(crate) fn week_start(z: i64) -> i64 {
     z - monday_index(z)
 }
 
 /// `YYYY-MM-DD` for a day-number (the same key shape the agenda buckets by).
-fn ymd_string(z: i64) -> String {
+pub(crate) fn ymd_string(z: i64) -> String {
     let (y, m, d) = civil_from_days(z);
     format!("{y:04}-{m:02}-{d:02}")
 }
@@ -2534,7 +2596,7 @@ fn add_months(anchor_dn: i64, delta: i64) -> i64 {
 }
 
 /// Parse a `YYYY-MM-DD` prefix into `(year, month, day)`.
-fn parse_ymd(date: &str) -> Option<(i64, u32, u32)> {
+pub(crate) fn parse_ymd(date: &str) -> Option<(i64, u32, u32)> {
     let p: Vec<&str> = date.splitn(3, '-').collect();
     if p.len() != 3 {
         return None;
@@ -2709,7 +2771,7 @@ fn utc_to_local_wall(ts: &str) -> String {
 
 /// The Week view's range heading, e.g. `8 – 14 June 2026` (collapsing the shared
 /// month / year), given the week's Monday.
-fn week_title(start: i64) -> String {
+pub(crate) fn week_title(start: i64) -> String {
     let (y1, m1, d1) = civil_from_days(start);
     let (y2, m2, d2) = civil_from_days(start + 6);
     if y1 == y2 && m1 == m2 {
@@ -2948,10 +3010,13 @@ where
                 .with(|cs| cs.iter().any(|c| c.id == e.calendar_id && c.is_writable()));
             let edit_id = e.id.clone();
             let cal = calendars.names.with(|mp| mp.get(&e.calendar_id).cloned());
-            let tip = match cal {
+            let mut tip = match cal {
                 Some(c) => format!("{title} · {c}"),
                 None => title.clone(),
             };
+            if let Some(p) = calendars.plans.with(|mp| mp.get(&e.id).cloned()) {
+                tip.push_str(&format!(" · plan: {p}"));
+            }
             view! {
                 <div class="cal-tg-allrow" style=cols_style.clone()>
                     <button
@@ -3027,10 +3092,13 @@ where
                         .with(|cs| cs.iter().any(|c| c.id == ev.calendar_id && c.is_writable()));
                     let edit_id = ev.id.clone();
                     let cal = calendars.names.with(|mp| mp.get(&ev.calendar_id).cloned());
-                    let tip = match cal {
+                    let mut tip = match cal {
                         Some(c) => format!("{title} · {time} · {c}"),
                         None => format!("{title} · {time}"),
                     };
+                    if let Some(p) = calendars.plans.with(|mp| mp.get(&ev.id).cloned()) {
+                        tip.push_str(&format!(" · plan: {p}"));
+                    }
                     view! {
                         <button
                             class="cal-tg-block"

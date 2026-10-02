@@ -42,4 +42,5 @@ pub mod tools;
 pub mod triggers;
 pub mod ui;
 pub mod webhooks;
+pub mod weekly_plans;
 pub mod ws;

@@ -14,6 +14,9 @@ use futures::FutureExt;
 use gloo_net::http::Request;
 
 use crate::api::{
+    ApplyWeeklyPlan, DuplicateWeeklyPlan, PlanEventLink, WeekOutcome, WeeklyPlan,
+    WeeklyPlanApplication, WeeklyPlanBody, WeeklyPlanEntry, WeeklyPlanEntryBody,
+    WEEKLY_PLANS_PATH, WEEKLY_PLAN_LINKS_PATH,
     ActiveTurn, AddColumn, AddOrgMember, AgentProfile, Automation, AutomationRun, BackendObject,
     Board, Calendar, CollectNowResult, ComputerAgentView, Connection, Conversation,
     ConversationQuestion, CreateAgentProfile, CreateAutomation, CreateBoard, CreateCalendar,
@@ -475,6 +478,107 @@ pub async fn update_event(
 pub async fn delete_event(token: Option<&str>, id: &str) -> Result<(), RestError> {
     let path = format!("{EVENTS_PATH}/{}", encode_path_segment(id));
     delete_resource(&url(&path), token).await
+}
+
+/// `GET /weekly-plans` — the workspace's weekly plans (with entries).
+pub async fn list_weekly_plans(token: Option<&str>) -> Result<Vec<WeeklyPlan>, RestError> {
+    get_json(&url(WEEKLY_PLANS_PATH), token).await
+}
+
+fn weekly_plan_path(id: &str, suffix: &str) -> String {
+    url(&format!("{WEEKLY_PLANS_PATH}/{}{suffix}", encode_path_segment(id)))
+}
+
+/// `POST /weekly-plans` — create an (empty) weekly plan.
+pub async fn create_weekly_plan(
+    token: Option<&str>,
+    body: &WeeklyPlanBody,
+) -> Result<WeeklyPlan, RestError> {
+    post_json(&url(WEEKLY_PLANS_PATH), token, Some(body)).await
+}
+
+/// `PUT /weekly-plans/{id}` — replace a plan's header fields.
+pub async fn update_weekly_plan(
+    token: Option<&str>,
+    id: &str,
+    body: &WeeklyPlanBody,
+) -> Result<WeeklyPlan, RestError> {
+    put_json(&weekly_plan_path(id, ""), token, body).await
+}
+
+/// `DELETE /weekly-plans/{id}` — delete a plan (applied events stay).
+pub async fn delete_weekly_plan(token: Option<&str>, id: &str) -> Result<(), RestError> {
+    delete_resource(&weekly_plan_path(id, ""), token).await
+}
+
+/// `POST /weekly-plans/{id}/duplicate` — copy a plan + entries.
+pub async fn duplicate_weekly_plan(
+    token: Option<&str>,
+    id: &str,
+    body: &DuplicateWeeklyPlan,
+) -> Result<WeeklyPlan, RestError> {
+    post_json(&weekly_plan_path(id, "/duplicate"), token, Some(body)).await
+}
+
+/// `POST /weekly-plans/{id}/entries` — add an entry.
+pub async fn add_weekly_plan_entry(
+    token: Option<&str>,
+    id: &str,
+    body: &WeeklyPlanEntryBody,
+) -> Result<WeeklyPlanEntry, RestError> {
+    post_json(&weekly_plan_path(id, "/entries"), token, Some(body)).await
+}
+
+/// `PUT /weekly-plans/{id}/entries/{entry_id}` — replace an entry.
+pub async fn update_weekly_plan_entry(
+    token: Option<&str>,
+    id: &str,
+    entry_id: &str,
+    body: &WeeklyPlanEntryBody,
+) -> Result<WeeklyPlanEntry, RestError> {
+    let suffix = format!("/entries/{}", encode_path_segment(entry_id));
+    put_json(&weekly_plan_path(id, &suffix), token, body).await
+}
+
+/// `DELETE /weekly-plans/{id}/entries/{entry_id}` — remove an entry.
+pub async fn delete_weekly_plan_entry(
+    token: Option<&str>,
+    id: &str,
+    entry_id: &str,
+) -> Result<(), RestError> {
+    let suffix = format!("/entries/{}", encode_path_segment(entry_id));
+    delete_resource(&weekly_plan_path(id, &suffix), token).await
+}
+
+/// `GET /weekly-plans/{id}/applications` — the weeks a plan is applied to.
+pub async fn list_weekly_plan_applications(
+    token: Option<&str>,
+    id: &str,
+) -> Result<Vec<WeeklyPlanApplication>, RestError> {
+    get_json(&weekly_plan_path(id, "/applications"), token).await
+}
+
+/// `POST /weekly-plans/{id}/apply` — apply a plan to week(s).
+pub async fn apply_weekly_plan(
+    token: Option<&str>,
+    id: &str,
+    body: &ApplyWeeklyPlan,
+) -> Result<Vec<WeekOutcome>, RestError> {
+    post_json(&weekly_plan_path(id, "/apply"), token, Some(body)).await
+}
+
+/// `POST /weekly-plans/{id}/unapply` — remove a plan's events from a week.
+pub async fn unapply_weekly_plan(
+    token: Option<&str>,
+    id: &str,
+    body: &ApplyWeeklyPlan,
+) -> Result<WeekOutcome, RestError> {
+    post_json(&weekly_plan_path(id, "/unapply"), token, Some(body)).await
+}
+
+/// `GET /weekly-plan-links` — event → plan links (for calendar badges).
+pub async fn list_weekly_plan_links(token: Option<&str>) -> Result<Vec<PlanEventLink>, RestError> {
+    get_json(&url(WEEKLY_PLAN_LINKS_PATH), token).await
 }
 
 /// `GET /connections` — this workspace's connections (newest first).

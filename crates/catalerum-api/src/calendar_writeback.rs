@@ -31,6 +31,7 @@ use catalerum_core::WorkspaceId;
 use catalerum_store::{SecretStore, Store};
 
 /// Where an event write lands, resolved from the target calendar.
+#[derive(Clone)]
 pub enum EventWriteTarget {
     /// A local (database-native) calendar: the store is the only truth; the
     /// caller keeps its existing store-only write path.
