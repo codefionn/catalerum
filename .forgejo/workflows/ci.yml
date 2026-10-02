@@ -19,8 +19,8 @@
 # --- Required secrets (repo/org Settings > Actions > Secrets) -----------------
 #   REGISTRY_USER       username for registry.k3s.s.fionn-router.internal
 #   REGISTRY_PASSWORD   its password / token
-#   REGISTRY_CA_CERT    PEM of the internal fionn-router root CA (optional when
-#                       the runner mounts it at $REGISTRY_CA_FILE instead)
+#   REGISTRY_CA_CERT    PEM of the internal fionn-router.internal root CA
+#                       (fallback when the runner has no mounted CA bundle)
 #
 # Image/cache references must be a bare host (no https://) — a scheme makes
 # buildx fail with "invalid reference format". Full refs are always assembled
@@ -50,8 +50,9 @@ env:
   OPERATOR_IMAGE_NAME: catalerum/catalerum-operator
   PREVIEW_IMAGE_NAME: catalerum/catalerum-preview
   SANDBOX_IMAGE_NAME: catalerum/catalerum-sandbox
-  # Fallback CA location when the REGISTRY_CA_CERT secret is not set.
-  REGISTRY_CA_FILE: /etc/forgejo-runner/certs/ca.crt
+  # The infrastructure-managed runner mounts this bundle inside job containers.
+  # Prefer it over REGISTRY_CA_CERT, which may contain an older root CA.
+  REGISTRY_CA_FILE: /etc/forgejo/ca-bundle.pem
   # dind wiring: TLS disabled, the service is only reachable on the job network.
   DOCKER_HOST: tcp://docker:2375
   BUILDX_NO_DEFAULT_ATTESTATIONS: "1"

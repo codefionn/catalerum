@@ -18,15 +18,22 @@ timeout 60 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 work="${RUNNER_TEMP:-/tmp}/catalerum-buildx"
 mkdir -p "$work"
 
-# Resolve the internal CA: the secret wins, else a runner-mounted bundle.
+# Prefer the infrastructure-managed bundle so a stale repository secret cannot
+# override the runner's current internal CA. Other runners can use the secret.
 ca_file="$work/registry-ca.crt"
-if [ -n "${REGISTRY_CA_CERT:-}" ]; then
-  printf '%s\n' "$REGISTRY_CA_CERT" > "$ca_file"
-elif [ -n "${REGISTRY_CA_FILE:-}" ] && [ -f "$REGISTRY_CA_FILE" ]; then
+if [ -n "${REGISTRY_CA_FILE:-}" ] && [ -f "$REGISTRY_CA_FILE" ]; then
   cp "$REGISTRY_CA_FILE" "$ca_file"
+elif [ -n "${REGISTRY_CA_CERT:-}" ]; then
+  printf '%s\n' "$REGISTRY_CA_CERT" > "$ca_file"
 else
   echo "no registry CA: set the REGISTRY_CA_CERT secret or mount it at \$REGISTRY_CA_FILE" >&2
   exit 1
+fi
+
+# Harbor token requests run in the buildx client, outside the BuildKit container.
+export SSL_CERT_FILE="$ca_file"
+if [ -n "${GITHUB_ENV:-}" ]; then
+  printf 'SSL_CERT_FILE=%s\n' "$ca_file" >> "$GITHUB_ENV"
 fi
 
 # The buildx client hands these credentials to BuildKit for pushes + the layer
@@ -51,6 +58,12 @@ TOML
 case ",${PLATFORMS:-}," in
   *,linux/arm64,*) docker run --rm --privileged tonistiigi/binfmt --install arm64 ;;
 esac
+
+# A persistent Docker daemon may retain yesterday's builder and its copied CA.
+# Recreate the container with today's config. Its named cache volume survives.
+if docker container inspect buildx_buildkit_catalerum0 >/dev/null 2>&1; then
+  docker rm -f buildx_buildkit_catalerum0
+fi
 
 docker buildx create --use --name catalerum --driver docker-container \
   --config "$work/buildkitd.toml"
