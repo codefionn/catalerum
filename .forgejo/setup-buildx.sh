@@ -5,6 +5,7 @@
 #
 # Inputs (env): REGISTRY, REGISTRY_USER, REGISTRY_PASSWORD, and either
 # REGISTRY_CA_CERT (PEM contents) or REGISTRY_CA_FILE (a runner-mounted path).
+# PLATFORMS selects whether ARM64 emulation is needed.
 set -euo pipefail
 
 # dind needs a moment to start listening; retry instead of failing on the first probe.
@@ -44,6 +45,23 @@ cat > "$work/buildkitd.toml" <<TOML
   ca = ["$ca_file"]
 TOML
 
+# BuildKit caches executable platforms when its worker starts. In rootless
+# Docker, registering binfmt afterward can invalidate that detection and leave
+# ARM64 RUN steps failing with exec format error. Register before bootstrapping.
+case ",${PLATFORMS:-}," in
+  *,linux/arm64,*) docker run --rm --privileged tonistiigi/binfmt --install arm64 ;;
+esac
+
 docker buildx create --use --name catalerum --driver docker-container \
   --config "$work/buildkitd.toml"
 docker buildx inspect --bootstrap
+
+# Check execution through this builder, rather than trusting its platform list.
+case ",${PLATFORMS:-}," in
+  *,linux/arm64,*)
+    docker buildx build --platform linux/arm64 --progress plain --no-cache - <<'DOCKERFILE'
+FROM debian:bookworm-slim
+RUN test "$(uname -m)" = aarch64
+DOCKERFILE
+    ;;
+esac

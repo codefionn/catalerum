@@ -115,8 +115,6 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           REGISTRY_CA_CERT: ${{ secrets.REGISTRY_CA_CERT }}
         run: .forgejo/setup-buildx.sh
-      # QEMU binfmt for the sandbox/preview foreign-arch apt layers.
-      - run: docker run --rm --privileged tonistiigi/binfmt --install arm64
       - run: docker buildx bake -f docker-bake.hcl app web operator preview sandbox
 
   test:
@@ -204,6 +202,4 @@ jobs:
           export PREVIEW_TAGS="$(tags_for "$PREVIEW_IMAGE_NAME")"
           export SANDBOX_TAGS="$(tags_for "$SANDBOX_IMAGE_NAME")"
           echo "publishing $TAGS + $WEB_TAGS + $OPERATOR_TAGS + $PREVIEW_TAGS + $SANDBOX_TAGS"
-          # binfmt for the sandbox/preview foreign-arch layers (fresh dind per job).
-          docker run --rm --privileged tonistiigi/binfmt --install arm64
           docker buildx bake -f docker-bake.hcl app web operator preview sandbox --push
