@@ -135,6 +135,7 @@ mod tests {
     /// [`crate::ActionKind`]; a new action variant without a doc trips this test.
     const ACTION_KINDS: &[&str] = &[
         "llm_agent",
+        "llm_decision",
         "run_profile",
         "run_skill",
         "create_event",

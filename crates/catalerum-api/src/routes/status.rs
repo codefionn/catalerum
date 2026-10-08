@@ -34,6 +34,8 @@ pub struct LlmInfo {
     pub base_url: String,
     /// Model used for chat completions.
     pub default_model: String,
+    /// Default native decision model, when configured.
+    pub decision_model: Option<String>,
     /// Model used for embeddings (→ Qdrant).
     pub embedding_model: String,
     /// Model used for text-to-speech.
@@ -193,6 +195,7 @@ async fn status(State(state): State<AppState>, _auth: Auth) -> ApiResult<Json<St
     let llm = LlmInfo {
         base_url: cfg.llm.base_url.clone(),
         default_model: cfg.llm.default_model.clone(),
+        decision_model: cfg.llm.decision_model.clone(),
         embedding_model: cfg.llm.embedding_model.clone(),
         speech_model: cfg.llm.speech_model.clone(),
         speech_voice: cfg.llm.speech_voice.clone(),

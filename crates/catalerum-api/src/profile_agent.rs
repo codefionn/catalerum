@@ -608,9 +608,9 @@ impl DelegateTool {
             // (`capabilities`/`grant_id` below), so this attributes without escalating.
             user_id: caller.user_id,
             agent_id: caller.agent_id,
-            grant_id: sub.grant_id,
+            grant_id: sub.grant_id.or(caller.grant_id),
             capabilities: Some(sub_caps),
-            dry_run,
+            dry_run: dry_run || caller.dry_run,
             gate: None,
             // Inherit the caller's conversation so a guarded subagent can defer a
             // durable approval onto the same thread (SOUL §19); `None` off the chat
@@ -698,7 +698,7 @@ impl DelegateTool {
             workspace_id: Some(self.workspace_id),
             user_id: caller.user_id,
             agent_id: caller.agent_id,
-            grant_id: None,
+            grant_id: caller.grant_id,
             capabilities: Some(self.parent_caps.clone()),
             dry_run: caller.dry_run,
             gate: None,

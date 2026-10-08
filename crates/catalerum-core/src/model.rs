@@ -766,6 +766,9 @@ pub struct LlmSettings {
     /// Chat / completion model id; `None` → `[llm].default_model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_model: Option<String>,
+    /// Native decision model id; `None` → `[llm].decision_model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_model: Option<String>,
     /// Text-to-speech model id; `None` → `[llm].speech_model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speech_model: Option<String>,

@@ -251,9 +251,10 @@ pub(crate) fn parse_model_kind(kind: Option<&str>) -> Result<ModelKind> {
         Some("tts") => Ok(ModelKind::Tts),
         Some("stt") => Ok(ModelKind::Stt),
         Some("embedding") => Ok(ModelKind::Embedding),
+        Some("decisions") => Ok(ModelKind::Decisions),
         Some("all") => Ok(ModelKind::All),
         Some(other) => Err(Error::invalid(format!(
-            "unknown model kind `{other}`; use chat, tts, stt, embedding, or all"
+            "unknown model kind `{other}`; use chat, tts, stt, embedding, decisions, or all"
         ))),
     }
 }
@@ -269,7 +270,7 @@ impl Tool for SearchModelsTool {
          or to speech tools. Returns each match's id (what you pass as `model`) and \
          display name, plus context window and per-token USD pricing when known. \
          `kind` picks the model class (default `chat`; also `tts`, `stt`, \
-         `embedding`, `all`); omit `query` to browse the catalog."
+         `embedding`, `decisions`, `all`); omit `query` to browse the catalog."
     }
     fn parameters_schema(&self) -> Json {
         json!({
@@ -278,7 +279,7 @@ impl Tool for SearchModelsTool {
                 "query": { "type": "string", "description": "Case-insensitive substring matched against model ids and display names (e.g. \"haiku\", \"gpt\"). Omit to browse the whole catalog." },
                 "kind": {
                     "type": "string",
-                    "enum": ["chat", "tts", "stt", "embedding", "all"],
+                    "enum": ["chat", "tts", "stt", "embedding", "decisions", "all"],
                     "description": "Model class to search (default `chat` — the class `delegate` needs)."
                 },
                 "limit": {
@@ -680,6 +681,10 @@ mod discovery_tests {
         assert_eq!(
             parse_model_kind(Some("embedding")).unwrap(),
             ModelKind::Embedding
+        );
+        assert_eq!(
+            parse_model_kind(Some("decisions")).unwrap(),
+            ModelKind::Decisions
         );
         assert_eq!(parse_model_kind(Some("all")).unwrap(), ModelKind::All);
         assert!(parse_model_kind(Some("images")).is_err());

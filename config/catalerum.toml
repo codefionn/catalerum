@@ -125,6 +125,8 @@ api_key = "Y2F0YWxlcnVtLWRldjpkZXYtZWNoby1rZXk="
 # enable only when llmleaf's [control.topology] points back at this API.
 # control_plane_enabled = true
 default_model = "echo"
+# Native decision models use /v1/decisions, not the chat endpoint.
+# decision_model = "typesafe/jev-1.13"
 # Embeddings (POST /v1/embeddings) — the vectors feed the Qdrant index (SOUL §6.4).
 embedding_model = "echo"
 # embedding_dimensions = 1536   # omit (or 0) for the provider default

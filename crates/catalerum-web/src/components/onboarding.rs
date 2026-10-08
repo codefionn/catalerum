@@ -285,6 +285,7 @@ pub fn OnboardingPanel(active: RwSignal<Panel>) -> impl IntoView {
             Step::Models => {
                 busy.set(true);
                 let body = LlmSettings {
+                    decision_model: None,
                     chat_model: blank_to_none(chat_model.get_untracked()),
                     speech_model: blank_to_none(speech_model.get_untracked()),
                     speech_voice: blank_to_none(speech_voice.get_untracked()),

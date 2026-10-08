@@ -50,6 +50,13 @@
 //! and `Webhook` dispatch their registry tools (`write_object`/`move_object`/
 //! `send_webhook`) like any other tool-backed kind.
 //!
+//! An `LlmDecision` action makes one native `/v1/decisions` call with structured
+//! state and named questions. Its model comes from the action, acting user's
+//! decision setting, or [`with_decision_model`](ToolActionRunner::with_decision_model).
+//! It requires `conversation:write`, keeps raw `answers`, and projects scalar
+//! results into `data` for branch expressions. Dry runs spend nothing. A grant
+//! with `cost_limit` is refused because this endpoint has no hard spend ceiling.
+//!
 //! A **`CreateChatThread`** action (SOUL §11/§12) is the in-product output sink:
 //! it atomically creates an `automation`-origin conversation and writes the
 //! template-rendered `message` as its first assistant turn. It is gated on
@@ -108,6 +115,8 @@ pub struct ToolActionRunner {
     /// When set, an `LlmAgent` action runs the §7 agent loop against this client.
     /// `None` → an `LlmAgent` action reports `Failed` ("no LLM client").
     llm: Option<LlmRunner>,
+    /// Decision model fallback. Kept separate from the chat model.
+    decision_model: Option<String>,
     /// The config storage backends (SOUL §9). When set (alongside `store`, which
     /// resolves runtime backends + the per-user default), the collect pipeline's
     /// [`archive_email`](ActionRunner::archive_email) writes a collected message's
@@ -130,6 +139,7 @@ impl ToolActionRunner {
             capabilities: None,
             store: None,
             llm: None,
+            decision_model: None,
             storage: None,
         }
     }
@@ -153,6 +163,7 @@ impl ToolActionRunner {
             capabilities: None,
             store: Some(store),
             llm: None,
+            decision_model: None,
             storage: None,
         }
     }
@@ -178,6 +189,14 @@ impl ToolActionRunner {
             client,
             default_model: default_model.into(),
         });
+        self
+    }
+
+    /// Set the server decision model fallback. An explicit action model or the
+    /// acting user's decision setting takes precedence.
+    #[must_use]
+    pub fn with_decision_model(mut self, model: Option<String>) -> Self {
+        self.decision_model = model;
         self
     }
 
@@ -610,6 +629,85 @@ impl ToolActionRunner {
             None
         };
         agent_outcome_to_action(&outcome, data)
+    }
+
+    /// Execute one native typed decision under the automation's authority.
+    async fn run_llm_decision(
+        &self,
+        workspace_id: WorkspaceId,
+        action: &Action,
+        trigger: Option<&Value>,
+        grant: Option<&Grant>,
+    ) -> ActionOutcome {
+        let Some(llm) = &self.llm else {
+            return ActionOutcome::failed("llm_decision needs an LLM client; this runner has none");
+        };
+        let ctx = match self.resolve_context(workspace_id, grant).await {
+            Ok(ctx) => ctx,
+            Err(err) => return ActionOutcome::failed(err),
+        };
+        if !cap_allows(
+            &ctx,
+            &Capability::new(CapAction::Write, Resource::domain("conversation")),
+        ) {
+            return ActionOutcome::failed(
+                "llm_decision denied: requires conversation:write authority",
+            );
+        }
+        let rendered = Action {
+            kind: action.kind,
+            params: render_params(&action.params, trigger),
+        };
+        let Some(spec) = rendered.as_llm_decision() else {
+            return ActionOutcome::failed("malformed llm_decision parameters");
+        };
+        if let Err(err) = rendered.validate_payload() {
+            return ActionOutcome::failed(err);
+        }
+        let user_model = match (&self.store, ctx.user_id, spec.model.as_ref()) {
+            (Some(store), Some(user), None) => store
+                .llm_settings()
+                .get(workspace_id, user)
+                .await
+                .ok()
+                .and_then(|settings| settings.decision_model),
+            _ => None,
+        };
+        let model = match crate::tools::decision_model(
+            spec.model.as_deref(),
+            user_model.as_deref(),
+            self.decision_model.as_deref(),
+        ) {
+            Ok(model) => model,
+            Err(err) => return ActionOutcome::failed(err.to_string()),
+        };
+        if ctx.dry_run {
+            return ActionOutcome::succeeded(Some(json!({ "dry_run": true, "model": model })));
+        }
+        if let Err(err) = crate::tools::check_decision_cost_limit(
+            grant.and_then(|grant| grant.constraints.cost_limit),
+        ) {
+            return ActionOutcome::failed(err.to_string());
+        }
+        if let Err(err) = crate::tools::validate_decision_model(&llm.client, &model).await {
+            return ActionOutcome::failed(err.to_string());
+        }
+        let request = catalerum_llm::DecisionRequest {
+            model,
+            state: spec
+                .state
+                .unwrap_or_else(|| trigger.cloned().unwrap_or_else(|| json!({}))),
+            questions: spec.questions,
+        };
+        match llm
+            .client
+            .decide(request)
+            .await
+            .and_then(crate::tools::decision_output)
+        {
+            Ok(output) => ActionOutcome::succeeded(Some(output)),
+            Err(err) => ActionOutcome::failed(format!("llm_decision: {err}")),
+        }
     }
 
     /// Run a `Summarize` action (SOUL §11): a **one-shot** LLM completion — no
@@ -1645,6 +1743,11 @@ impl ActionRunner for ToolActionRunner {
         trigger: Option<&Value>,
         grant: Option<&Grant>,
     ) -> ActionOutcome {
+        if action.kind == ActionKind::LlmDecision {
+            return self
+                .run_llm_decision(workspace_id, action, trigger, grant)
+                .await;
+        }
         // The LlmAgent action runs the §7 agent loop, not a single tool dispatch.
         if action.kind == ActionKind::LlmAgent {
             return self
@@ -4345,5 +4448,201 @@ END:VCALENDAR\r
             1,
             "only the channel-triggered, non-empty reply was sent"
         );
+    }
+}
+
+#[cfg(test)]
+mod decision_tests {
+    use super::*;
+    use catalerum_core::{capability::Constraints, model::StepStatus, GrantId};
+    use wiremock::{
+        matchers::{body_json, method, path, query_param},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    fn decision_action(params: Value) -> Action {
+        Action {
+            kind: ActionKind::LlmDecision,
+            params: params.as_object().unwrap().clone(),
+        }
+    }
+
+    fn decision_questions() -> Value {
+        json!({"outcome":{"type":"noul","instructions":"Is this urgent?"}})
+    }
+
+    async fn decision_catalog(server: &MockServer, model: &str) {
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(query_param("type", "decisions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"data":[{"id":model,"name":"Decision model"}]})),
+            )
+            .expect(1)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn decision_runtime_projects_probabilities_and_preserves_trigger_envelope() {
+        let server = MockServer::start().await;
+        decision_catalog(&server, "decision-model").await;
+        let context = json!({"trigger":{"kind":"email","subject":"Urgent"},"inputs":{"previous":{"count":3}}});
+        let questions = decision_questions();
+        Mock::given(method("POST")).and(path("/v1/decisions"))
+            .and(body_json(json!({"model":"decision-model","state":context,"questions":questions})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model":"decision-model", "answers":{"outcome":{"type":"noul","noul":0.91,"confidence":0.8}},
+                "usage":{"input_tokens":9,"output_tokens":1,"cost":0.0}
+            }))).expect(1).mount(&server).await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model")
+            .with_decision_model(Some("decision-model".into()))
+            .with_capabilities(catalerum_iam::base_capabilities(Role::Member));
+        let result = runner
+            .run(
+                WorkspaceId::new(),
+                &decision_action(json!({"questions":questions})),
+                Some(&context),
+                None,
+            )
+            .await;
+        assert_eq!(result.status, StepStatus::Succeeded, "{:?}", result.error);
+        let out = result.output.unwrap();
+        assert_eq!(out["data"]["outcome"], json!(0.91));
+        assert_eq!(out["answers"]["outcome"]["confidence"], json!(0.8));
+        assert_eq!(out["cost_usd"], json!(0.0));
+        assert_eq!(out["usage"]["input_tokens"], json!(9));
+    }
+
+    #[tokio::test]
+    async fn decision_runtime_renders_nested_state_and_instructions_with_explicit_model() {
+        let server = MockServer::start().await;
+        decision_catalog(&server, "explicit-model").await;
+        Mock::given(method("POST")).and(path("/v1/decisions"))
+            .and(body_json(json!({"model":"explicit-model","state":{"count":3},"questions":{"outcome":{"type":"noul","instructions":"Process Urgent"}}})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"explicit-model","answers":{"outcome":{"type":"noul","noul":0.4}},"usage":{"input_tokens":1,"output_tokens":1}})))
+            .expect(1).mount(&server).await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model")
+            .with_decision_model(Some("server-model".into()));
+        let action = decision_action(
+            json!({"model":"explicit-model","state":"{{ inputs.previous }}","questions":{"outcome":{"type":"noul","instructions":"Process {{ trigger.subject }}"}}}),
+        );
+        let result = runner
+            .run(
+                WorkspaceId::new(),
+                &action,
+                Some(&json!({"trigger":{"subject":"Urgent"},"inputs":{"previous":{"count":3}}})),
+                None,
+            )
+            .await;
+        assert_eq!(result.status, StepStatus::Succeeded, "{:?}", result.error);
+    }
+
+    #[tokio::test]
+    async fn decision_runtime_missing_model_dry_run_cost_limit_and_denial_never_spend() {
+        let server = MockServer::start().await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model");
+        let action = decision_action(json!({"questions":decision_questions()}));
+        let ws = WorkspaceId::new();
+        let missing = runner.run(ws, &action, None, None).await;
+        assert!(missing.error.unwrap().contains("no decision model"));
+        let runner = runner.with_decision_model(Some("decision-model".into()));
+        let denied = runner
+            .clone()
+            .with_capabilities(catalerum_iam::base_capabilities(Role::Viewer))
+            .run(ws, &action, None, None)
+            .await;
+        assert!(denied.error.unwrap().contains("conversation:write"));
+        let mut grant = Grant {
+            id: GrantId::new(),
+            workspace_id: ws,
+            name: "limited".into(),
+            capabilities: catalerum_iam::base_capabilities(Role::Member),
+            constraints: Constraints {
+                dry_run: true,
+                cost_limit: Some(1.0),
+                ..Default::default()
+            },
+        };
+        let dry = runner.run(ws, &action, None, Some(&grant)).await;
+        assert_eq!(dry.status, StepStatus::Succeeded);
+        assert_eq!(
+            dry.output.unwrap(),
+            json!({"dry_run":true,"model":"decision-model"})
+        );
+        grant.constraints.dry_run = false;
+        let limited = runner.run(ws, &action, None, Some(&grant)).await;
+        assert!(limited.error.unwrap().contains("cost_limit"));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn decision_runtime_rejects_missing_answers_and_wrong_model_kind() {
+        let server = MockServer::start().await;
+        decision_catalog(&server, "decision-model").await;
+        Mock::given(method("POST")).and(path("/v1/decisions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"decision-model","answers":{},"usage":{"input_tokens":1,"output_tokens":1}})))
+            .expect(1).mount(&server).await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model");
+        let result = runner
+            .run(
+                WorkspaceId::new(),
+                &decision_action(
+                    json!({"model":"decision-model","state":{},"questions":decision_questions()}),
+                ),
+                None,
+                None,
+            )
+            .await;
+        assert_eq!(result.status, StepStatus::Failed);
+        assert!(result.error.unwrap().contains("outcome"));
+
+        let server = MockServer::start().await;
+        decision_catalog(&server, "decision-model").await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model");
+        let result = runner
+            .run(
+                WorkspaceId::new(),
+                &decision_action(json!({"model":"chat-model","questions":decision_questions()})),
+                None,
+                None,
+            )
+            .await;
+        assert_eq!(result.status, StepStatus::Failed);
+        assert!(result.error.unwrap().contains("decisions catalog"));
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn decision_runtime_allows_explicit_pinned_id_when_catalog_is_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(query_param("type", "decisions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data":[]})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST")).and(path("/v1/decisions"))
+            .and(body_json(json!({"model":"jev/version","state":{},"questions":decision_questions()})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"jev/version","answers":{"outcome":{"type":"noul","noul":0.9}},"usage":{"input_tokens":1,"output_tokens":1}})))
+            .expect(1).mount(&server).await;
+        let runner = ToolActionRunner::new(ToolRegistry::new())
+            .with_llm(OpenRouterClient::new(server.uri(), "test"), "chat-model");
+        let result = runner
+            .run(
+                WorkspaceId::new(),
+                &decision_action(json!({"model":"jev/version","questions":decision_questions()})),
+                None,
+                None,
+            )
+            .await;
+        assert_eq!(result.status, StepStatus::Succeeded, "{:?}", result.error);
     }
 }

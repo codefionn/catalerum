@@ -1292,10 +1292,14 @@ async fn run_turn(
     // mirroring `Auth::capabilities()`; only a grantless session gets role base caps.
     // Resolved before the user message persists: the `/<skill>` gate below (and the
     // profile intersection further down) both need it.
-    let user_caps = match principal.grant_id {
-        Some(gid) => state.store().grants().get(ws_id, gid).await?.capabilities,
-        None => catalerum_iam::base_capabilities(principal.role),
+    let session_grant = match principal.grant_id {
+        Some(gid) => Some(state.store().grants().get(ws_id, gid).await?),
+        None => None,
     };
+    let user_caps = session_grant
+        .as_ref()
+        .map(|grant| grant.capabilities.clone())
+        .unwrap_or_else(|| catalerum_iam::base_capabilities(principal.role));
 
     // A `/<skill>` invocation (SOUL §12/§23): resolve + gate + snapshot BEFORE the
     // user row persists, so the runbook rides the row — this turn's seed reads it
@@ -1666,6 +1670,10 @@ async fn run_turn(
     let mut ctx = ToolContext {
         workspace_id: Some(ws_id),
         user_id: Some(principal.user_id),
+        grant_id: session_grant.as_ref().map(|grant| grant.id),
+        dry_run: session_grant
+            .as_ref()
+            .is_some_and(|grant| grant.constraints.dry_run),
         // The thread this turn runs in — the `ask_user` tool (SOUL §7/§12) and the
         // tool guard's require-user-feedback path (SOUL §19) both need it to persist
         // a durable pending question / approval the client can re-fetch after a
@@ -1917,14 +1925,7 @@ async fn run_turn(
     // first-message title is replaced live on its next refresh/poll). Off the
     // hot path like 6-7; a user rename pins the title and wins over the
     // generator by construction.
-    crate::chat_meta::maybe_generate_meta(
-        state,
-        ws_id,
-        conversation_id,
-        turn_model,
-    )
-    .await;
-
+    crate::chat_meta::maybe_generate_meta(state, ws_id, conversation_id, turn_model).await;
 
     Ok(())
 }

@@ -1453,6 +1453,7 @@ fn blank_to_none(value: String) -> Option<String> {
 fn ModelsSection() -> impl IntoView {
     // Current selections (editable). An empty string means "use gateway default".
     let chat_model = RwSignal::new(String::new());
+    let decision_model = RwSignal::new(String::new());
     let speech_model = RwSignal::new(String::new());
     let speech_voice = RwSignal::new(String::new());
     let transcription_model = RwSignal::new(String::new());
@@ -1471,6 +1472,7 @@ fn ModelsSection() -> impl IntoView {
     // TTS/STT-only ids also live only under their kind, so the per-kind fetch is the
     // only way to surface them (see `GET /llm-models?kind=`).
     let chat_models = RwSignal::new(Vec::<ModelInfo>::new());
+    let decision_models = RwSignal::new(Vec::<ModelInfo>::new());
     let speech_models = RwSignal::new(Vec::<ModelInfo>::new());
     let transcription_models = RwSignal::new(Vec::<ModelInfo>::new());
     // OCR runs through a **vision** chat model, so its suggestions are the chat
@@ -1495,6 +1497,7 @@ fn ModelsSection() -> impl IntoView {
         match rest::get_llm_settings(token.as_deref()).await {
             Ok(s) => {
                 chat_model.set(s.chat_model.unwrap_or_default());
+                decision_model.set(s.decision_model.unwrap_or_default());
                 speech_model.set(s.speech_model.unwrap_or_default());
                 speech_voice.set(s.speech_voice.unwrap_or_default());
                 transcription_model.set(s.transcription_model.unwrap_or_default());
@@ -1519,6 +1522,9 @@ fn ModelsSection() -> impl IntoView {
                     .collect(),
             );
             chat_models.set(m);
+        }
+        if let Ok(m) = rest::list_llm_models(token.as_deref(), "decisions").await {
+            decision_models.set(m);
         }
         if let Ok(m) = rest::list_llm_models(token.as_deref(), "tts").await {
             speech_models.set(m);
@@ -1605,6 +1611,7 @@ fn ModelsSection() -> impl IntoView {
         notice.set(None);
         let body = LlmSettings {
             chat_model: blank_to_none(chat_model.get_untracked()),
+            decision_model: blank_to_none(decision_model.get_untracked()),
             speech_model: blank_to_none(speech_model.get_untracked()),
             speech_voice: blank_to_none(speech_voice.get_untracked()),
             transcription_model: blank_to_none(transcription_model.get_untracked()),
@@ -1620,6 +1627,7 @@ fn ModelsSection() -> impl IntoView {
                 Ok(s) => {
                     // Re-sync from the server's normalized record.
                     chat_model.set(s.chat_model.unwrap_or_default());
+                    decision_model.set(s.decision_model.unwrap_or_default());
                     speech_model.set(s.speech_model.unwrap_or_default());
                     speech_voice.set(s.speech_voice.unwrap_or_default());
                     transcription_model.set(s.transcription_model.unwrap_or_default());
@@ -1722,6 +1730,23 @@ fn ModelsSection() -> impl IntoView {
                     commit_add_image_model,
                     model_options(chat_models, false),
                     Signal::derive(|| "Add a model id…".to_string()),
+                    Signal::derive(|| false),
+                    "settings-input",
+                )}
+            </div>
+
+            <div class="settings-field">
+                <label class="settings-label">"Decision model"</label>
+                <p class="settings-blurb">
+                    "Used for typed choices, rubric scores, and yes/no probabilities, including automation classifiers in decision mode. Leave blank to use the server decision model."
+                </p>
+                {model_autocomplete(
+                    Signal::derive(move || decision_model.get()),
+                    move |v| decision_model.set(v),
+                    model_options(decision_models, true),
+                    Signal::derive(move || defaults.get().and_then(|d| d.decision_model)
+                        .map(|m| format!("default: {m}"))
+                        .unwrap_or_else(|| "no server decision model configured".to_string())),
                     Signal::derive(|| false),
                     "settings-input",
                 )}

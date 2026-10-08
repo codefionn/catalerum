@@ -2778,6 +2778,9 @@ pub struct LlmInfo {
     /// Chat model.
     #[serde(default)]
     pub default_model: String,
+    /// Native decision model default.
+    #[serde(default)]
+    pub decision_model: Option<String>,
     /// Embedding model.
     #[serde(default)]
     pub embedding_model: String,
@@ -2949,6 +2952,9 @@ pub struct LlmSettings {
     /// Chat / completion model id; `None` → gateway default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_model: Option<String>,
+    /// Native decision model id; unset uses the server decision default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_model: Option<String>,
     /// Text-to-speech model id; `None` → gateway default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speech_model: Option<String>,

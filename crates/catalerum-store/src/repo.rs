@@ -6120,7 +6120,7 @@ impl ProfileRepo {
 }
 
 /// The full set of `llm_settings` columns, in row order (for `SELECT`/`RETURNING`).
-const LLM_SETTINGS_COLS: &str = "workspace_id, user_id, chat_model, speech_model, \
+const LLM_SETTINGS_COLS: &str = "workspace_id, user_id, chat_model, decision_model, speech_model, \
      speech_voice, transcription_model, voice_input_speed, ocr_model, image_input_models, \
      created_at, updated_at";
 
@@ -6157,6 +6157,7 @@ impl LlmSettingsRepo {
                 workspace_id,
                 user_id,
                 chat_model: None,
+                decision_model: None,
                 speech_model: None,
                 speech_voice: None,
                 transcription_model: None,
@@ -6184,12 +6185,13 @@ impl LlmSettingsRepo {
         transcription_model: Option<&str>,
         voice_input_speed: f32,
         ocr_model: Option<&str>,
+        decision_model: Option<&str>,
     ) -> Result<LlmSettings> {
         let row: LlmSettingsRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO llm_settings
                  (workspace_id, user_id, chat_model, speech_model, speech_voice, transcription_model,
-                  voice_input_speed, ocr_model)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                  voice_input_speed, ocr_model, decision_model)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              ON CONFLICT (workspace_id, user_id)
              DO UPDATE SET chat_model = EXCLUDED.chat_model,
                            speech_model = EXCLUDED.speech_model,
@@ -6197,6 +6199,7 @@ impl LlmSettingsRepo {
                            transcription_model = EXCLUDED.transcription_model,
                            voice_input_speed = EXCLUDED.voice_input_speed,
                            ocr_model = EXCLUDED.ocr_model,
+                           decision_model = EXCLUDED.decision_model,
                            updated_at = CURRENT_TIMESTAMP
              RETURNING {LLM_SETTINGS_COLS}"
         ))
@@ -6208,6 +6211,7 @@ impl LlmSettingsRepo {
         .bind(transcription_model)
         .bind(voice_input_speed)
         .bind(ocr_model)
+        .bind(decision_model)
         .fetch_one(&self.pool)
         .await
         .map_err(map)?;

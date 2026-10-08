@@ -315,6 +315,8 @@ impl Trigger {
 pub enum ActionKind {
     /// Run the §7 agent loop with a restricted tool/skill set + grant.
     LlmAgent,
+    /// Evaluate structured questions with a native decision model.
+    LlmDecision,
     /// Run a named [`AgentProfile`](catalerum_core::model::AgentProfile) (§19) — a
     /// durable scoped agent — as an action. Its grant must be ⊆ this automation's.
     RunProfile,
@@ -483,6 +485,37 @@ pub struct Action {
 }
 
 impl Action {
+    /// Validate typed decision parameters when saving a linear or graph spec.
+    pub fn validate_payload(&self) -> Result<(), String> {
+        if self.kind == ActionKind::LlmDecision {
+            let decision: LlmDecision = serde_json::from_value(Value::Object(self.params.clone()))
+                .map_err(|error| format!("invalid llm_decision payload: {error}"))?;
+            if decision
+                .model
+                .as_ref()
+                .is_some_and(|model| model.trim().is_empty())
+            {
+                return Err("llm_decision model must be non-empty when supplied".into());
+            }
+            if decision.state.as_ref().is_some_and(|state| {
+                !matches!(state, Value::String(_) | Value::Object(_) | Value::Array(_))
+            }) {
+                return Err("llm_decision state must be a string, object, or array".into());
+            }
+            catalerum_core::decisions::validate_questions(&decision.questions)?;
+        }
+        Ok(())
+    }
+
+    /// Native decision payload, or `None` for another action or malformed fields.
+    #[must_use]
+    pub fn as_llm_decision(&self) -> Option<LlmDecision> {
+        if self.kind != ActionKind::LlmDecision {
+            return None;
+        }
+        serde_json::from_value(Value::Object(self.params.clone())).ok()
+    }
+
     /// The restricted agent spec for an `LlmAgent` action (§11/§19/§23): the
     /// system prompt, model, and the tool/skill subset the agent loop is confined
     /// to. `None` for any other kind (or if the params don't parse).
@@ -515,6 +548,17 @@ impl Action {
         }
         serde_json::from_value(Value::Object(self.params.clone())).ok()
     }
+}
+
+/// The typed payload for one native decision call. Omitted state uses the firing
+/// event and upstream outputs supplied by the executor. Templates stay JSON.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LlmDecision {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<Value>,
+    pub questions: Map<String, Value>,
 }
 
 /// The typed payload of an `LlmAgent` action (SOUL §11): runs the §7 loop with a
@@ -684,6 +728,9 @@ impl AutomationSpec {
         if actions.is_empty() {
             return Err(SpecError::NoActions);
         }
+        for action in &actions {
+            action.validate_payload().map_err(SpecError::Action)?;
+        }
         Ok(AutomationSpec {
             triggers,
             condition: condition.cloned(),
@@ -726,6 +773,38 @@ mod tests {
 
     fn parse_trigger(v: Value) -> Result<Trigger, serde_json::Error> {
         serde_json::from_value(v)
+    }
+
+    #[test]
+    fn decision_payload_preserves_structured_state_and_questions() {
+        let raw = json!({"kind":"llm_decision","model":"jev","state":{"ticket":"{{ trigger.text }}"},"questions":{"urgent":{"type":"noul","instructions":{"question":"Urgent?"}}}});
+        let action: Action = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(action.kind, ActionKind::LlmDecision);
+        assert_eq!(
+            action.as_llm_decision().unwrap().state,
+            Some(raw["state"].clone())
+        );
+        assert!(action.validate_payload().is_ok());
+        assert_eq!(serde_json::to_value(action).unwrap(), raw);
+        let action: Action = serde_json::from_value(json!({"kind":"llm_decision","questions":{"urgent":{"type":"noul","instructions":"Urgent?"}}})).unwrap();
+        assert!(action.as_llm_decision().unwrap().state.is_none());
+        assert!(!ActionKind::LlmDecision.is_idempotent());
+    }
+
+    #[test]
+    fn decision_authoring_rejects_missing_or_malformed_questions() {
+        let triggers = [json!({"kind":"webhook","path":"/decision"})];
+        for action in [
+            json!({"kind":"llm_decision"}),
+            json!({"kind":"llm_decision","questions":{}}),
+            json!({"kind":"llm_decision","questions":{"x":{"type":"choice","instructions":"Choose","criteria":[]}}}),
+            json!({"kind":"llm_decision","state":42,"questions":{"x":{"type":"noul","instructions":"Yes?"}}}),
+        ] {
+            assert!(matches!(
+                AutomationSpec::from_json(&triggers, None, &[action]),
+                Err(SpecError::Action(_))
+            ));
+        }
     }
 
     #[test]

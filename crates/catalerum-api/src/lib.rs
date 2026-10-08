@@ -39,6 +39,7 @@
 //! | ------ | ---- | ---- | ------------ | -------- |
 //! | GET  | `/healthz` | none | — | `"ok"` |
 //! | GET  | `/auth/magic` | none | `?token=<one-time>[&format=json]` | 302 → SPA `?token=<session>` (or [`routes::auth::SessionResponse`] JSON when `format=json`) |
+//! | POST | `/decisions` | bearer (`conversation:write`) | JSON `state`, named `questions`, optional `model` | Native answers, scalar data, model and usage |
 //! | POST | `/conversations` | bearer | [`routes::conversations::CreateConversation`] | `Conversation` |
 //! | GET  | `/conversations` | bearer | — | `Vec<Conversation>` |
 //! | GET  | `/conversations/{id}` | bearer | — | `Conversation` |
@@ -296,6 +297,7 @@ pub fn build_router(state: AppState) -> Router {
         // Speech-to-text (SOUL §7): `POST /audio/transcriptions` — the chat mic
         // records a blob and posts it here for the composer's dictation.
         .merge(routes::audio::router())
+        .merge(routes::decisions::router())
         .merge(routes::ocr::router())
         .merge(routes::tools::router())
         .merge(routes::tokens::router())

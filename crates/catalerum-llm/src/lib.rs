@@ -55,6 +55,7 @@ pub mod batch;
 pub mod catalog;
 pub mod client;
 pub mod compact;
+pub mod decisions;
 pub mod embed;
 pub mod ocr;
 pub mod sse;
@@ -66,6 +67,7 @@ pub use agent::{
     TurnObserver,
 };
 pub use compact::{CompactionConfig, COMPACTION_SUMMARY_PREFIX, DEFAULT_CONTEXT_WINDOW};
+pub use decisions::{DecisionRequest, DecisionResponse, DecisionUsage};
 // Re-export the agent loop's stop signal ([`AgentConfig::cancel`]) so callers
 // wiring a Stop control don't need their own `tokio-util` dependency.
 pub use batch::{BatchCounts, BatchJob, BatchResult, BatchState};

@@ -28,6 +28,7 @@ pub mod ask;
 pub mod audio;
 pub mod capability;
 pub mod computer;
+pub mod decisions;
 pub mod embed;
 pub mod error;
 pub mod id;

@@ -10,6 +10,7 @@ pub mod channels;
 pub mod computer_agents;
 pub mod conversations;
 pub mod db_connections;
+pub mod decisions;
 pub mod download;
 pub mod email;
 pub mod fetch;

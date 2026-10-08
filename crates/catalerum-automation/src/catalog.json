@@ -1097,6 +1097,55 @@
     ]
   },
   {
+    "id": "action.llm_decision",
+    "node_kind": "action",
+    "kind": "llm_decision",
+    "title": "LLM decision action",
+    "summary": "Evaluate named noul, choice, or score questions with a decision model",
+    "description": "Sends structured state and named questions to a native decision model. Choose a model advertised in the decision model catalog, or use the configured decision model. Every question requires a type and instructions. Instructions can be a string, object, or array. A noul question returns a number between 0 and 1. A choice question requires a non-empty criteria object mapping option names to descriptions or null. A score question requires a non-empty criteria array describing the scale in order, starting at zero. Optional noul criteria are an object of descriptions. Templates in state, instructions, and criteria resolve against the trigger and upstream outputs. Omit state to use the input envelope. The output preserves model, answers, usage, id, provider, probabilities, confidence, and score legends. Read raw answers through inputs.<node>.answers.<question>. The data field projects each answer to its noul, choice, or score value, so a condition can use input.data.urgent >= 0.8. Missing, malformed, or out-of-range answers fail the step. This action spends model tokens and skips collect redeliveries unless rerun_on_redelivery is true.",
+    "params": [
+      {
+        "name": "model",
+        "ty": "string",
+        "required": false,
+        "description": "Decision model id or route. Omit for the configured decision model."
+      },
+      {
+        "name": "state",
+        "ty": "string|object|array",
+        "required": false,
+        "description": "Structured facts to evaluate. Omit to use the input envelope containing the trigger and upstream outputs."
+      },
+      {
+        "name": "questions",
+        "ty": "object",
+        "required": true,
+        "description": "Non-empty map of named questions. Each has type noul, choice, or score, instructions, and the criteria its type requires. Preserve structured JSON descriptions."
+      },
+      {
+        "name": "rerun_on_redelivery",
+        "ty": "boolean",
+        "required": false,
+        "description": "Run this token-spending action on a collect redelivery. Default false."
+      }
+    ],
+    "example": {
+      "id": "classify",
+      "kind": "action",
+      "action": {
+        "kind": "llm_decision",
+        "state": {"ticket": "{{ trigger.text }}"},
+        "questions": {
+          "urgent": {"type": "noul", "instructions": "Does this ticket need immediate attention?"},
+          "team": {"type": "choice", "instructions": "Which team owns the ticket?", "criteria": {"support": "Usage questions", "engineering": "Software bugs"}},
+          "severity": {"type": "score", "instructions": "How much work is blocked?", "criteria": ["None", "Some", "All"]}
+        }
+      },
+      "position": {"x": 0, "y": 0}
+    },
+    "keywords": ["decision", "classify", "classification", "noul", "choice", "score", "probability", "confidence", "routing"]
+  },
+  {
     "id": "action.move_object",
     "node_kind": "action",
     "kind": "move_object",

@@ -78,6 +78,8 @@ pub struct UpdateLlmSettings {
     #[serde(default)]
     pub chat_model: Option<String>,
     #[serde(default)]
+    pub decision_model: Option<String>,
+    #[serde(default)]
     pub speech_model: Option<String>,
     #[serde(default)]
     pub speech_voice: Option<String>,
@@ -108,6 +110,7 @@ pub struct ModelsQuery {
 fn model_kind(kind: &Option<String>) -> ModelKind {
     match kind.as_deref().map(str::trim) {
         Some("llm" | "chat") => ModelKind::Chat,
+        Some("decisions" | "decision") => ModelKind::Decisions,
         Some("tts") => ModelKind::Tts,
         Some("stt") => ModelKind::Stt,
         Some("embedding") => ModelKind::Embedding,
@@ -160,6 +163,9 @@ async fn set_settings(
     if let Some(m) = normalize(&body.chat_model) {
         validate_model(&state, "chat", m, ModelKind::Chat).await?;
     }
+    if let Some(m) = normalize(&body.decision_model) {
+        validate_model(&state, "decision", m, ModelKind::Decisions).await?;
+    }
     if let Some(m) = normalize(&body.speech_model) {
         validate_model(&state, "speech", m, ModelKind::Tts).await?;
     }
@@ -194,6 +200,7 @@ async fn set_settings(
             normalize(&body.transcription_model),
             body.voice_input_speed,
             normalize(&body.ocr_model),
+            normalize(&body.decision_model),
         )
         .await?;
     Ok(Json(settings))
@@ -443,6 +450,7 @@ mod tests {
         assert!(b.speech_model.is_none());
         assert!(b.transcription_model.is_none());
         assert!(b.ocr_model.is_none());
+        assert!(b.decision_model.is_none());
         assert_eq!(b.voice_input_speed, 1.5);
     }
 
@@ -473,6 +481,7 @@ mod tests {
         // `llm`/`chat` both mean chat; an unknown kind falls back to the full list.
         assert_eq!(model_kind(&Some("stt".into())), ModelKind::Stt);
         assert_eq!(model_kind(&Some("llm".into())), ModelKind::Chat);
+        assert_eq!(model_kind(&Some("decisions".into())), ModelKind::Decisions);
         assert_eq!(model_kind(&Some("bogus".into())), ModelKind::All);
     }
 

@@ -1750,11 +1750,12 @@ fn is_agent_action(action: &Value) -> bool {
     action.get("kind").and_then(Value::as_str) == Some("llm_agent")
 }
 
-/// Whether an `llm_agent` action is a **Classifier** — an agent steered to emit a
-/// JSON map of `outcome → 0.0–1.0 probability`. Marked by its web-only `outcomes`
-/// list (the backend just sees a JSON-steered `llm_agent`).
+/// Classifier nodes carry an outcomes list and use chat scores or native decisions.
 fn is_classifier(action: &Value) -> bool {
-    is_agent_action(action) && action.get("outcomes").and_then(Value::as_array).is_some()
+    matches!(
+        action.get("kind").and_then(Value::as_str),
+        Some("llm_agent" | "llm_decision")
+    ) && action.get("outcomes").and_then(Value::as_array).is_some()
 }
 
 /// A one-line node subtitle for the box: the trigger/action kind, or the code
@@ -2762,6 +2763,7 @@ fn action_config(graph: RwSignal<FlowGraph>, id: String, action: Value) -> impl 
     let kind_sig = RwSignal::new(kind);
     let id_for_kind = id.clone();
     let id_for_body = id.clone();
+    let id_for_value = id.clone();
 
     view! {
         <label class="flow-cfg-label">"Action kind"</label>
@@ -2769,17 +2771,18 @@ fn action_config(graph: RwSignal<FlowGraph>, id: String, action: Value) -> impl 
             class="flow-cfg-input"
             on:change=move |ev| {
                 let k = event_target_value(&ev);
-                // Switching kind resets the payload to a sensible default — an agent
-                // gets its chatbot defaults, any other kind a bare `{kind}`.
+                // Agents and decisions get ready-to-edit defaults; other kinds start empty.
                 let next = if k == "llm_agent" {
                     default_agent_action()
+                } else if k == "llm_decision" {
+                    default_decision_action()
                 } else {
                     serde_json::json!({ "kind": k })
                 };
                 set_node_action(graph, &id_for_kind, next);
                 kind_sig.set(k);
             }
-            prop:value=move || kind_sig.get()
+            prop:value=move || node_action(graph, &id_for_value).get("kind").and_then(Value::as_str).unwrap_or("summarize").to_string()
         >
             {ACTION_KINDS
                 .iter()
@@ -2791,11 +2794,12 @@ fn action_config(graph: RwSignal<FlowGraph>, id: String, action: Value) -> impl 
         {move || {
             let id = id_for_body.clone();
             match kind_sig.get().as_str() {
-                "llm_agent" => {
-                    // Both an Agent and a Classifier are `llm_agent`; pick the editor
-                    // by the node's current shape (a classifier carries `outcomes`).
+                "llm_agent" | "llm_decision" => {
+                    // Classifiers carry outcomes metadata on either model engine.
                     if is_classifier(&node_action(graph, &id)) {
                         classifier_config(graph, id).into_any()
+                    } else if kind_sig.get() == "llm_decision" {
+                        decision_config(graph, id).into_any()
                     } else {
                         agent_config(graph, id).into_any()
                     }
@@ -4015,45 +4019,222 @@ fn classifier_form_from_params(action: &Value) -> (Vec<String>, String) {
     (outcomes, instructions)
 }
 
-/// Typed config for a **Classifier** node: a free-text "what to classify" plus a
-/// newline-separated list of outcomes. Every edit regenerates the underlying
-/// JSON-steered `llm_agent` action (with a freshly-built scoring system prompt).
+/// Update a classifier while keeping fields such as an explicit state or editor metadata.
+fn classifier_update(
+    original: &Value,
+    outcomes: &[String],
+    instructions: &str,
+    engine: &str,
+    model: &str,
+) -> Value {
+    let mut action = original.as_object().cloned().unwrap_or_default();
+    for key in [
+        "system",
+        "output",
+        "questions",
+        "model",
+        "instructions",
+        "tools",
+        "skills",
+        "reasoning_effort",
+    ] {
+        action.remove(key);
+    }
+    let legacy = classifier_action(outcomes, instructions);
+    action.extend(legacy.as_object().unwrap().clone());
+    if engine == "decisions" {
+        action.insert("kind".into(), Value::String("llm_decision".into()));
+        action.remove("system");
+        action.remove("output");
+        let clean = action["outcomes"].as_array().unwrap();
+        let questions: Map<String, Value> = clean.iter().filter_map(Value::as_str).map(|outcome| {
+            let task = if instructions.trim().is_empty() { "Classify the input." } else { instructions.trim() };
+            (outcome.to_string(), serde_json::json!({
+                "type": "noul",
+                "instructions": format!("{task} Does the input match the outcome '{outcome}'?"),
+                "criteria": { "true": format!("The input matches '{outcome}'."), "false": format!("The input does not match '{outcome}'.") }
+            }))
+        }).collect();
+        action.insert("questions".into(), Value::Object(questions));
+    }
+    if !model.trim().is_empty() {
+        action.insert("model".into(), Value::String(model.trim().to_string()));
+    }
+    Value::Object(action)
+}
+
+/// Classifiers can use chat JSON scoring or native yes/no decision probabilities.
 fn classifier_config(graph: RwSignal<FlowGraph>, id: String) -> impl IntoView {
-    let (outcomes, instructions) = classifier_form_from_params(&node_action(graph, &id));
+    let original = node_action(graph, &id);
+    let (outcomes, instructions) = classifier_form_from_params(&original);
+    let engine_sig = RwSignal::new(
+        if original["kind"] == "llm_decision" {
+            "decisions"
+        } else {
+            "llm"
+        }
+        .to_string(),
+    );
+    let model_sig = RwSignal::new(
+        original
+            .get("model")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+    );
     let instr_sig = RwSignal::new(instructions);
     let outcomes_sig = RwSignal::new(outcomes.join("\n"));
     let id_sv = StoredValue::new(id);
+    let chat_models = RwSignal::new(Vec::<ModelInfo>::new());
+    let decision_models = RwSignal::new(Vec::<ModelInfo>::new());
+    spawn_local(async move {
+        let token = auth::resolve_token();
+        if let Ok(models) = rest::list_llm_models(token.as_deref(), "llm").await {
+            chat_models.set(models);
+        }
+        if let Ok(models) = rest::list_llm_models(token.as_deref(), "decisions").await {
+            decision_models.set(models);
+        }
+    });
     let apply = move || {
+        let original = node_action(graph, &id_sv.get_value());
         let outs = parse_outcomes(&outcomes_sig.get_untracked());
-        let v = classifier_action(&outs, &instr_sig.get_untracked());
+        let v = classifier_update(
+            &original,
+            &outs,
+            &instr_sig.get_untracked(),
+            &engine_sig.get_untracked(),
+            &model_sig.get_untracked(),
+        );
         set_node_action(graph, &id_sv.get_value(), v);
     };
+    let chat_options = model_options(chat_models, false);
+    let decision_options = model_options(decision_models, false);
 
     view! {
+        <label class="flow-cfg-label">"Classifier engine"</label>
+        <select class="flow-cfg-input" prop:value=move || engine_sig.get() on:change=move |ev| {
+            engine_sig.set(event_target_value(&ev));
+            model_sig.set(String::new());
+            apply();
+        }>
+            <option value="llm">"Chat model (JSON scores)"</option>
+            <option value="decisions">"Decision model (typed probabilities)"</option>
+        </select>
+        <label class="flow-cfg-label">"Model (optional)"</label>
+        {model_autocomplete(
+            Signal::derive(move || model_sig.get()),
+            move |v| { model_sig.set(v); apply(); },
+            Signal::derive(move || if engine_sig.get() == "decisions" { decision_options.get() } else { chat_options.get() }),
+            Signal::derive(move || if engine_sig.get() == "decisions" { "user or server decision model".to_string() } else { "gateway default".to_string() }),
+            Signal::derive(|| false),
+            "flow-cfg-input",
+        )}
         <label class="flow-cfg-label">"What to classify"</label>
-        <textarea
-            class="flow-cfg-area"
-            placeholder="e.g. Judge the sentiment / intent of the incoming message…"
-            prop:value=move || instr_sig.get()
-            on:input=move |ev| {
-                instr_sig.set(event_target_value(&ev));
-                apply();
-            }
-        ></textarea>
-
+        <textarea class="flow-cfg-area" placeholder="e.g. Judge the sentiment of the incoming message"
+            prop:value=move || instr_sig.get() on:input=move |ev| { instr_sig.set(event_target_value(&ev)); apply(); }></textarea>
         <label class="flow-cfg-label">"Outcomes (one per line)"</label>
-        <textarea
-            class="flow-cfg-area flow-cfg-area-tall"
-            placeholder="positive&#10;negative&#10;neutral"
-            prop:value=move || outcomes_sig.get()
-            on:input=move |ev| {
-                outcomes_sig.set(event_target_value(&ev));
-                apply();
-            }
-        ></textarea>
+        <textarea class="flow-cfg-area flow-cfg-area-tall" placeholder="positive&#10;negative&#10;neutral"
+            prop:value=move || outcomes_sig.get() on:input=move |ev| { outcomes_sig.set(event_target_value(&ev)); apply(); }></textarea>
         <div class="flow-cfg-hint">
-            "The agent returns a JSON object scoring each outcome 0.0–1.0. Downstream nodes read it from this node's `data` output — e.g. a Condition checking `input.inputs[<id>].data.positive > 0.5`."
+            "Each outcome has an independent probability from 0.0 to 1.0. A downstream Condition can check `input.inputs[<id>].data.positive > 0.5`. Decision mode also returns the typed results in `answers`."
         </div>
+    }
+}
+
+/// Write a native decision form while preserving other action metadata.
+fn decision_params(
+    original: &Value,
+    model: &str,
+    questions: &str,
+    state: &str,
+) -> Result<Value, String> {
+    let mut params = original.as_object().cloned().unwrap_or_default();
+    params.insert("kind".into(), Value::String("llm_decision".into()));
+    if model.trim().is_empty() {
+        params.remove("model");
+    } else {
+        params.insert("model".into(), Value::String(model.trim().to_string()));
+    }
+    let questions: Value =
+        serde_json::from_str(questions).map_err(|err| format!("Questions JSON: {err}"))?;
+    if !questions
+        .as_object()
+        .is_some_and(|questions| !questions.is_empty())
+    {
+        return Err("Questions must be a non-empty JSON object.".into());
+    }
+    params.insert("questions".into(), questions);
+    if state.trim().is_empty() {
+        params.remove("state");
+    } else {
+        let state: Value =
+            serde_json::from_str(state).map_err(|err| format!("State JSON: {err}"))?;
+        if !matches!(state, Value::String(_) | Value::Object(_) | Value::Array(_)) {
+            return Err("State must be a JSON string, object, or array.".into());
+        }
+        params.insert("state".into(), state);
+    }
+    Ok(Value::Object(params))
+}
+
+/// Native decisions accept named typed questions and structured input state.
+fn decision_config(graph: RwSignal<FlowGraph>, id: String) -> impl IntoView {
+    let action = node_action(graph, &id);
+    let model_sig = RwSignal::new(
+        action
+            .get("model")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+    );
+    let questions_sig = RwSignal::new(action.get("questions").map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+        .unwrap_or_else(|| "{\n  \"urgent\": {\n    \"type\": \"noul\",\n    \"instructions\": \"Does this need an immediate response?\"\n  }\n}".to_string()));
+    let state_sig = RwSignal::new(
+        action
+            .get("state")
+            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+            .unwrap_or_default(),
+    );
+    let parse_err = RwSignal::new(Option::<String>::None);
+    let models = RwSignal::new(Vec::<ModelInfo>::new());
+    let id_sv = StoredValue::new(id);
+    spawn_local(async move {
+        let token = auth::resolve_token();
+        if let Ok(list) = rest::list_llm_models(token.as_deref(), "decisions").await {
+            models.set(list);
+        }
+    });
+    let apply = move || match decision_params(
+        &node_action(graph, &id_sv.get_value()),
+        &model_sig.get_untracked(),
+        &questions_sig.get_untracked(),
+        &state_sig.get_untracked(),
+    ) {
+        Ok(params) => {
+            parse_err.set(None);
+            set_node_action(graph, &id_sv.get_value(), params);
+        }
+        Err(error) => parse_err.set(Some(error)),
+    };
+    view! {
+        <label class="flow-cfg-label">"Decision model (optional)"</label>
+        {model_autocomplete(Signal::derive(move || model_sig.get()), move |v| { model_sig.set(v); apply(); },
+            model_options(models, false), Signal::derive(|| "user or server decision model".to_string()),
+            Signal::derive(|| false), "flow-cfg-input")}
+        <label class="flow-cfg-label">"Questions (JSON object)"</label>
+        <div class="flow-cfg-hint">
+            "Each named question needs `type` and `instructions`. Use `noul` for a yes/no probability, `choice` with a named criteria object, or `score` with an ordered criteria array. Results are in `answers` and scalar values in `data`."
+        </div>
+        <textarea class="flow-cfg-area flow-cfg-area-tall" prop:value=move || questions_sig.get()
+            on:input=move |ev| { questions_sig.set(event_target_value(&ev)); apply(); }></textarea>
+        <label class="flow-cfg-label">"State (JSON, optional)"</label>
+        <div class="flow-cfg-hint">"Leave blank to evaluate the node's input, including upstream outputs. Explicit state can use templates such as {{ trigger.text }}."</div>
+        <textarea class="flow-cfg-area" prop:value=move || state_sig.get()
+            on:input=move |ev| { state_sig.set(event_target_value(&ev)); apply(); }></textarea>
+        <Show when=move || parse_err.with(Option::is_some) fallback=|| ().into_view()>
+            <div class="flow-cfg-err">{move || parse_err.get().unwrap_or_default()}</div>
+        </Show>
     }
 }
 
@@ -4461,6 +4642,13 @@ fn default_agent_action() -> Value {
     })
 }
 
+fn default_decision_action() -> Value {
+    serde_json::json!({
+        "kind": "llm_decision",
+        "questions": {"urgent": {"type": "noul", "instructions": "Does this need an immediate response?"}}
+    })
+}
+
 /// The default payload a fresh **Classifier** node carries: a JSON-steered
 /// `llm_agent` that scores three common sentiment buckets — edit the outcomes to
 /// fit the task.
@@ -4699,6 +4887,7 @@ const ACTION_KINDS: &[(&str, &str)] = &[
     ("create_chat_thread", "Create chat thread"),
     ("notify", "Notify"),
     ("llm_agent", "LLM agent"),
+    ("llm_decision", "Decision model"),
     ("create_note", "Create note"),
     ("edit_note", "Edit note"),
     ("create_task", "Create task"),
@@ -5660,6 +5849,71 @@ mod tests {
         let bare = classifier_action(&["x".to_string()], "   ");
         assert!(bare.get("instructions").is_none());
         assert!(is_classifier(&bare));
+    }
+
+    #[test]
+    fn decision_form_preserves_structured_questions_and_clears_optional_values() {
+        let original = serde_json::json!({"kind":"llm_decision","model":"old","state":"old input","editor":"keep"});
+        let questions = r#"{"team":{"type":"choice","instructions":"Which team?","criteria":{"engineering":"Bugs","support":"Usage"}},"severity":{"type":"score","instructions":"How severe?","criteria":["Low","High"]}}"#;
+        let result = decision_params(
+            &original,
+            " new ",
+            questions,
+            r#"{"ticket":"{{ trigger.text }}"}"#,
+        )
+        .unwrap();
+        assert_eq!(result["model"], "new");
+        assert_eq!(result["state"]["ticket"], "{{ trigger.text }}");
+        assert_eq!(result["questions"]["team"]["type"], "choice");
+        assert_eq!(
+            result["questions"]["severity"]["criteria"],
+            serde_json::json!(["Low", "High"])
+        );
+        assert_eq!(result["editor"], "keep");
+        let cleared = decision_params(&result, "", questions, "").unwrap();
+        assert!(cleared.get("model").is_none());
+        assert!(cleared.get("state").is_none());
+        assert!(decision_params(&original, "", "[]", "").is_err());
+        assert!(decision_params(&original, "", questions, "true").is_err());
+        assert!(decision_params(&original, "", "{", "").is_err());
+        assert_eq!(
+            default_decision_action()["questions"]["urgent"]["type"],
+            "noul"
+        );
+    }
+
+    #[test]
+    fn classifier_decisions_preserve_input_and_round_trip_engine_changes() {
+        let legacy = serde_json::json!({"kind":"llm_agent","outcomes":["urgent"],"instructions":"Read the email.","state":{"subject":"{{ trigger.subject }}"},"model":"chat-model"});
+        let native = classifier_update(
+            &legacy,
+            &["urgent".into()],
+            "Read the email.",
+            "decisions",
+            "  decision-model  ",
+        );
+        assert_eq!(native["kind"], "llm_decision");
+        assert_eq!(native["model"], "decision-model");
+        assert_eq!(native["state"], legacy["state"]);
+        assert_eq!(native["questions"]["urgent"]["type"], "noul");
+        assert!(native["questions"]["urgent"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("Read the email."));
+        assert!(native.get("system").is_none());
+        assert!(native.get("output").is_none());
+        assert!(is_classifier(&native));
+        assert!(!is_agent_action(&native));
+        assert_eq!(
+            classifier_form_from_params(&native),
+            (vec!["urgent".into()], "Read the email.".into())
+        );
+        let chat = classifier_update(&native, &["urgent".into()], "Read the email.", "llm", "");
+        assert_eq!(chat["kind"], "llm_agent");
+        assert!(chat.get("questions").is_none());
+        assert!(chat.get("model").is_none());
+        assert_eq!(chat["state"], legacy["state"]);
+        assert!(is_classifier(&chat));
     }
 
     #[test]

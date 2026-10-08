@@ -1498,6 +1498,8 @@ pub struct LlmConfig {
     pub control_plane_enabled: bool,
     /// Model for chat (`/responses`).
     pub default_model: String,
+    /// Model for typed decisions (`/decisions`); unset requires a caller override.
+    pub decision_model: Option<String>,
     /// Model for embeddings (`/embeddings`); the vectors feed Qdrant (SOUL §6.4).
     pub embedding_model: String,
     /// Optional embedding output dimensionality (Matryoshka truncation); `None`
@@ -1531,6 +1533,7 @@ impl Default for LlmConfig {
             control_token: Secret::default(),
             control_plane_enabled: false,
             default_model: "echo".to_string(),
+            decision_model: None,
             embedding_model: "echo".to_string(),
             embedding_dimensions: None,
             speech_model: "echo".to_string(),
@@ -2955,9 +2958,10 @@ mod tests {
 
     #[test]
     fn llm_modality_defaults_target_echo() {
-        // Every modality shares the echo endpoint by default (offline dev).
+        // Generative modalities share echo. Native decisions require a configured model.
         let c = LlmConfig::default();
         assert_eq!(c.default_model, "echo");
+        assert!(c.decision_model.is_none());
         assert_eq!(c.embedding_model, "echo");
         assert_eq!(c.speech_model, "echo");
         assert_eq!(c.transcription_model, "echo");

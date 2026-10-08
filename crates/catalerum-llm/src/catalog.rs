@@ -27,6 +27,8 @@ pub enum ModelKind {
     Stt,
     /// Embedding models.
     Embedding,
+    /// Native structured decision models.
+    Decisions,
 }
 
 impl ModelKind {
@@ -38,6 +40,7 @@ impl ModelKind {
             ModelKind::Tts => Some(llmleaf_client::ModelType::Tts),
             ModelKind::Stt => Some(llmleaf_client::ModelType::Stt),
             ModelKind::Embedding => Some(llmleaf_client::ModelType::Embedding),
+            ModelKind::Decisions => Some(llmleaf_client::ModelType::Decisions),
         }
     }
 }
@@ -45,7 +48,7 @@ impl ModelKind {
 /// One model in the gateway catalog (mapped from llmleaf's `ModelEntry`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelInfo {
-    /// Model id / routing alias to pass as `ChatRequest::model`.
+    /// Model id / routing alias to pass to a modality request.
     pub id: String,
     /// Human-friendly display name.
     pub name: String,

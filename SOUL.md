@@ -266,6 +266,16 @@ invalidation, grant-revocation fan-out), **token-stream relay** (§7), **workflo
   Routes are modality-agnostic: a logical model resolves the same fallback chain whatever the
   modality, and a target lacking a modality returns Unsupported and is skipped with no health
   penalty. Per-modality models are `[llm]` config fields (§13).
+- **Native decisions:** `POST /v1/decisions` takes structured `state` and named
+  `questions`. Types are `noul` for a yes/no probability, `choice` for an allowed
+  option, and `score` for a position on an ordered rubric. Preserve typed answers,
+  distributions, confidence, and provider usage. Discover models with
+  `GET /v1/models?type=decisions`. An explicit model overrides the acting user's
+  `llm_settings.decision_model`, then `[llm].decision_model`. An unset decision
+  default requires an explicit choice. `POST /decisions` and the `decide` tool
+  require `conversation:write`; dry runs make no provider call. A grant with a
+  `cost_limit` rejects this single-request path because it cannot enforce a
+  provider spending ceiling before the request.
 - **Streaming:** SSE → `StreamEvent` parser; assemble `tool_calls` deltas; every turn ends with
   a guaranteed `message_done`.
 - **Cross-pod token relay (Valkey):** the generating pod publishes token deltas to a per-turn
@@ -406,7 +416,14 @@ Durable trigger→condition→action engine; definitions in Postgres, execution 
   ingest, there is nothing for a reactor to fire on.)
 - **Condition:** a predicate over store/graph/vectors.
 - **Code / Condition graph nodes (Boa JS, §20):** inline `{ runtime, source }` nodes run **sandboxed JS** (no fs/net; bounded loop/recursion/stack + wall-clock). A code node may call registry tools via `catalerum.callTool(name, args)`, dispatched **under the automation's own authority** — the *same* deny-by-default capability gate an Action node runs through, so a code node can reach **no tool an action node couldn't** (no separate allow-list; delete/exec/egress stay unreachable unless the grant confers them; a `dry_run` grant simulates each call). With no tool host wired it is a pure data-transform — `catalerum` is undefined.
+- **Decision classifiers:** the editor can use native `LlmDecision` probabilities
+  or the existing chat classifier. Native classifiers ask one independent `noul`
+  question per outcome. Both expose `data.<outcome>` for downstream conditions;
+  native results also retain `answers` with provider metadata. Existing saved
+  chat classifiers keep their engine unless the user changes it.
 - **Actions (typed; also the LLM's tools):** `LlmAgent { system, model, tools, skills }`,
+  `LlmDecision { model?, state?, questions }` (one native decision request; omitted
+  state uses the node input, including upstream outputs),
   `RunProfile { profile, input? }` (run a named §19 agent profile under its own grant, which the
   runner verifies is ⊆ this automation's — attenuation),
   `RunSkill { skill, input?, model?, output? }` (run a named §23 skill through the **same** §7 agent
@@ -1113,6 +1130,8 @@ on restore (today: re-ingest); and artifact-level encryption beyond what the
 destination provides (an SSE-enabled S3 bucket) until a backup envelope lands.
 
 ## 31. Implementation Progress
+
+**2026-10-08. Native decision LLMs.** Added llmleaf's `/v1/decisions` transport for named `noul`, `choice`, and `score` questions over structured JSON state. Added the decisions model catalog, server and per-user decision defaults, authenticated `POST /decisions`, the `decide` tool, and the `llm_decision` automation action. Classifier nodes can select chat scoring or native decision probabilities. Both expose `data.<outcome>` for condition nodes; native results also preserve typed answers, probabilities, confidence, and usage. Malformed answers fail the request. Dry runs make no provider call; native calls reject cost-limited grants because they cannot enforce a spending ceiling before the request. MCP, chat, and delegate tool contexts now retain grant metadata. Verified 263 core/LLM/automation unit tests, 393 web tests, 12 focused API tests with mocked providers and isolated Postgres, five settings tests, model-settings persistence on Postgres and SQLite, and `just lint` with native and Wasm Clippy warnings denied. The bundled echo gateway does not implement decisions, so native provider behavior was tested with HTTP mocks.
 
 **2026-10-08. Dependency updates.** Updated direct Rust crate requirements and `Cargo.lock`, including SQLx 0.9, kube 4.2, jsonwebtoken 11, Boa 0.22, croner 4, Argon2 0.6, SHA-2/HMAC, OpenTelemetry, and HTTP/WebSocket clients. Rust 1.94.1 is now the minimum because the current AWS SDK requires it. Migrated dynamic SQL assertions, cron parsing, XML text/name handling, password hashing, digest formatting, and new llmleaf SDK fields. Existing Argon2 password hashes have a regression test. The Kubernetes client uses the supported `v1_32` API feature. Playwright's exact npm pin and browser image are both 1.64.0; llmleaf client and server pins are 0.5.0. The operator builder uses Rust 1.99 on Bookworm. The LLM crate keeps reqwest 0.12.28 because the SDK accepts that version's client in its public builder.
 

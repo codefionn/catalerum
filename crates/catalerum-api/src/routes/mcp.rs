@@ -260,6 +260,8 @@ async fn handle(
     let ctx = ToolContext {
         workspace_id: Some(p.workspace_id),
         user_id: Some(p.user_id),
+        grant_id: auth.grant().map(|grant| grant.id),
+        dry_run: auth.grant().is_some_and(|grant| grant.constraints.dry_run),
         capabilities: Some(auth.capabilities()),
         ..Default::default()
     };

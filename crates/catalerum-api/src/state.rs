@@ -1031,6 +1031,12 @@ impl AppState {
                 download_base_url.clone(),
             );
         }
+        crate::tools::register_decision_tool(
+            &mut registry,
+            llm.clone(),
+            store.clone(),
+            config.llm.decision_model.clone(),
+        );
         // The default store handle the terminal flush targets (unchanged behavior).
         let storage_default = storage.default_handle();
         // Background delegate/computer/terminal workers share one pod-local lifecycle

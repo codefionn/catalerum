@@ -4,7 +4,8 @@
 //! writer (`set`) are column-scoped, so neither clobbers the other's columns.
 //!
 //! Same DB gating as the other store tests: set `CATALERUM_TEST_DATABASE_URL`
-//! (or `DATABASE_URL`) to run it; otherwise it skips and passes offline.
+//! (or `DATABASE_URL`) to run it; otherwise PostgreSQL tests skip. The SQLite
+//! feature uses an in-memory database when no URL is supplied.
 
 use catalerum_core::id::UserId;
 use catalerum_store::Store;
@@ -13,6 +14,7 @@ fn test_db_url() -> Option<String> {
     std::env::var("CATALERUM_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok()
+        .or_else(|| cfg!(feature = "sqlite").then(|| "sqlite::memory:".to_string()))
 }
 
 #[tokio::test]
@@ -68,11 +70,13 @@ async fn image_input_models_upserts_and_coexists_with_model_selections() {
             None,
             1.5,
             Some("vision-x"),
+            Some("decision-x"),
         )
         .await
         .expect("set chat model");
     assert_eq!(with_model.chat_model.as_deref(), Some("chatty"));
     assert_eq!(with_model.ocr_model.as_deref(), Some("vision-x"));
+    assert_eq!(with_model.decision_model.as_deref(), Some("decision-x"));
     assert_eq!(
         with_model.image_input_models,
         vec!["gpt-x".to_string(), "claude-y".to_string()],
@@ -86,6 +90,7 @@ async fn image_input_models_upserts_and_coexists_with_model_selections() {
         .await
         .expect("replace image models");
     assert_eq!(relisted.image_input_models, vec!["only-this".to_string()]);
+    assert_eq!(relisted.decision_model.as_deref(), Some("decision-x"));
     assert_eq!(
         relisted.chat_model.as_deref(),
         Some("chatty"),
@@ -95,6 +100,34 @@ async fn image_input_models_upserts_and_coexists_with_model_selections() {
         relisted.ocr_model.as_deref(),
         Some("vision-x"),
         "set_image_input_models leaves the OCR model intact"
+    );
+
+    // Decision selections are user/workspace scoped, and can be cleared independently.
+    let other = store
+        .llm_settings()
+        .get(ws.id, UserId::new())
+        .await
+        .expect("other user");
+    assert!(other.decision_model.is_none());
+    let cleared_decision = store
+        .llm_settings()
+        .set(
+            ws.id,
+            user,
+            Some("chatty"),
+            None,
+            None,
+            None,
+            1.5,
+            Some("vision-x"),
+            None,
+        )
+        .await
+        .expect("clear decision model");
+    assert!(cleared_decision.decision_model.is_none());
+    assert_eq!(
+        cleared_decision.image_input_models,
+        vec!["only-this".to_string()]
     );
 
     // An empty list clears the override.

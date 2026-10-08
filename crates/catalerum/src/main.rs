@@ -679,6 +679,7 @@ async fn main() -> anyhow::Result<()> {
         state.llm().clone(),
         state.config().llm.default_model.clone(),
     )
+    .with_decision_model(state.config().llm.decision_model.clone())
     // Storage backends so the collect pipeline archives a collected message's raw
     // `.eml` + attachments as objects and links them onto the row (SOUL §9/§28/§29);
     // runtime backends + the per-user default files store resolve through the store.

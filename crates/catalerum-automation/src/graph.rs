@@ -236,6 +236,13 @@ impl Graph {
                 return Err(format!("duplicate node id '{}'", n.id));
             }
         }
+        for node in &self.nodes {
+            if let NodeKind::Action { action } = &node.kind {
+                action
+                    .validate_payload()
+                    .map_err(|error| format!("node '{}': {error}", node.id))?;
+            }
+        }
         // Every edge endpoint references an existing node.
         for e in &self.edges {
             if !ids.contains(e.from.as_str()) {
