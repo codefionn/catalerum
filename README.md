@@ -14,6 +14,8 @@ This is my idea of a highly capable agentic workflow environment.
 
 ## Recipes
 
+Use Rust 1.94.1 or newer. The web build also needs the `wasm32-unknown-unknown` target.
+
 Run `just` to list every recipe:
 
 | Recipe | What it does |

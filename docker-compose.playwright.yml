@@ -18,7 +18,7 @@
 
 services:
   playwright:
-    image: ${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.61.1-noble}
+    image: ${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.64.0-noble}
     network_mode: host
     # Chromium needs the host IPC namespace so it doesn't crash on the
     # container's tiny default /dev/shm (per the Playwright container docs).

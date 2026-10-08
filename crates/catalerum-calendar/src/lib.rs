@@ -226,7 +226,16 @@ pub fn provider_from_connection_with(
 pub(crate) fn content_cursor(bytes: &[u8]) -> Cursor {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    Cursor::new(format!("sha256:{:x}", hasher.finalize()))
+    Cursor::new(format!("sha256:{}", digest_hex(hasher.finalize())))
+}
+
+/// Format a SHA-256 digest as lowercase hex for stable cursor values.
+pub(crate) fn digest_hex(digest: impl AsRef<[u8]>) -> String {
+    digest
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[cfg(test)]

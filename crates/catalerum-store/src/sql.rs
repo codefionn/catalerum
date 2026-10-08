@@ -15,7 +15,7 @@
 //!   incapable of mutating data even if the classifier were fooled — and
 //!   `to_jsonb` renders every column type faithfully into JSON.
 
-use sqlx::{types::Json, PgPool};
+use sqlx::{types::Json, AssertSqlSafe, PgPool};
 
 use crate::error::{Result, StoreError};
 
@@ -149,7 +149,7 @@ pub async fn run_read(
     // `max_rows` is a `u64` we format in — not user text — so it cannot inject.
     let wrapped = format!("SELECT to_jsonb(_sub) FROM ( {stmt} ) AS _sub LIMIT {max_rows}");
     let query = bind_all!(
-        sqlx::query_scalar::<_, serde_json::Value>(&wrapped),
+        sqlx::query_scalar::<_, serde_json::Value>(AssertSqlSafe(wrapped)),
         &params
     );
     query.fetch_all(pool).await.map_err(StoreError::from_sqlx)
@@ -164,7 +164,7 @@ pub async fn run_read(
 pub async fn run_write(pool: &PgPool, sql: &str, params: &[serde_json::Value]) -> Result<u64> {
     let stmt = single_statement(sql)?;
     let params = decode_params(params)?;
-    let query = bind_all!(sqlx::query(stmt), &params);
+    let query = bind_all!(sqlx::query(AssertSqlSafe(stmt)), &params);
     let res = query.execute(pool).await.map_err(StoreError::from_sqlx)?;
     Ok(res.rows_affected())
 }
@@ -179,7 +179,7 @@ pub async fn run_write(pool: &PgPool, sql: &str, params: &[serde_json::Value]) -
 pub async fn run_ddl_batch(pool: &PgPool, statements: &[String]) -> Result<()> {
     let mut tx = pool.begin().await.map_err(StoreError::from_sqlx)?;
     for stmt in statements {
-        sqlx::query(stmt)
+        sqlx::query(AssertSqlSafe(stmt.as_str()))
             .execute(&mut *tx)
             .await
             .map_err(StoreError::from_sqlx)?;
@@ -201,7 +201,7 @@ pub async fn run_sql_script(pool: &PgPool, script: &str) -> Result<()> {
     // transaction's connection. This is the `query`-style path (a `Send` future),
     // unlike `sqlx::raw_sql(..).execute(..)` which yields a non-`Send` future.
     (&mut *tx)
-        .execute(script)
+        .execute(AssertSqlSafe(script))
         .await
         .map_err(StoreError::from_sqlx)?;
     tx.commit().await.map_err(StoreError::from_sqlx)?;

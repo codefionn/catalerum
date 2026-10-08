@@ -326,10 +326,12 @@ async fn truncate_all(conn: &mut sqlx::PgConnection, manifest: &Manifest) -> Res
         .map(|t| format!("public.{}", quote_ident(&t.name)))
         .collect::<Vec<_>>()
         .join(", ");
-    sqlx::query(&format!("TRUNCATE {list} RESTART IDENTITY CASCADE"))
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "TRUNCATE {list} RESTART IDENTITY CASCADE"
+    )))
+    .execute(&mut *conn)
+    .await
+    .map_err(sqlx_err)?;
     Ok(())
 }
 

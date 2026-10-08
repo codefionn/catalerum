@@ -5495,7 +5495,7 @@ fn fmt_int(n: u32) -> String {
     let len = bytes.len();
     let mut out = String::with_capacity(len + (len.saturating_sub(1)) / 3);
     for (i, &b) in bytes.iter().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(b as char);

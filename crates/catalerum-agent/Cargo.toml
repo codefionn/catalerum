@@ -14,27 +14,27 @@ path = "src/main.rs"
 # Shared wire protocol (frames, capabilities, ops) — the ONLY catalerum crate the
 # daemon links, so it stays small and independently installable.
 catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
-anyhow = "1.0.102"
-base64 = "0.22"
-clap = { version = "4.6.1", features = ["derive"] }
-futures-util = "0.3.32"
+anyhow = "1.0.104"
+base64 = "0.23.1"
+clap = { version = "4.6.7", features = ["derive"] }
+futures-util = "0.3.34"
 hostname = "0.4.2"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "process", "fs", "io-util", "time", "sync", "signal"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "process", "fs", "io-util", "time", "sync", "signal"] }
 # Outbound WebSocket client (same stack the fetch crate's browser transport uses).
 # Native roots on top of the baked-in webpki ones: self-hosted servers commonly sit
 # behind an internal CA that only the OS trust store knows.
-tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots"] }
 # tokio-tungstenite's `rustls-tls-webpki-roots` ships rustls WITHOUT a crypto backend
 # (the app must pick one); pin ring and install it in main() or every wss:// connect
 # panics at runtime.
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
-toml = "1.1.2"
+rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
+toml = "1.1.7"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 walkdir = "2.5.0"
-regex = "1.11.1"
+regex = "1.13.1"
 
 # Linux: confine executed commands to the granted directories via the Landlock LSM
 # (best-effort — no-op on kernels without Landlock).

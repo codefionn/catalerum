@@ -20,7 +20,7 @@
 
 # ---- base toolchain ---------------------------------------------------------
 # `slim-bookworm` == current stable, matching rust-toolchain.toml (channel =
-# "stable") and >= the repo MSRV (1.85). Pin to e.g. rust:1.90-slim-bookworm for
+# "stable") and >= the repo MSRV (1.94.1). Pin to e.g. rust:1.99-slim-bookworm for
 # a reproducible toolchain. Debian 12 (bookworm) glibc matches the distroless
 # runtime below.
 FROM --platform=$BUILDPLATFORM rust:slim-bookworm AS base
@@ -354,7 +354,7 @@ WORKDIR /work
 CMD ["tail", "-f", "/dev/null"]
 
 # ---- all-in-one image ---------------------------------------------------------
-FROM ghcr.io/codefionn/llmleaf:0.2.5 AS llmleaf-upstream
+FROM ghcr.io/codefionn/llmleaf:0.5.0 AS llmleaf-upstream
 FROM docker.io/qdrant/qdrant:latest AS qdrant-upstream
 
 FROM runtime-sandbox AS runtime-all-in-one

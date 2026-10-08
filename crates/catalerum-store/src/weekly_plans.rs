@@ -19,6 +19,13 @@ use serde::Serialize;
 use sqlx::types::Json;
 use uuid::Uuid;
 
+// Every interpolated column list below is a module constant, never user input.
+macro_rules! assert_sql_safe {
+    ($($args:tt)*) => {
+        sqlx::AssertSqlSafe(format!($($args)*))
+    };
+}
+
 use crate::error::{Result, StoreError};
 use crate::DbPool as PgPool;
 
@@ -195,8 +202,12 @@ impl WeeklyPlanRepo {
     // --- plans -------------------------------------------------------------
 
     /// Create an empty plan.
-    pub async fn create(&self, workspace_id: WorkspaceId, input: &PlanInput<'_>) -> Result<WeeklyPlan> {
-        let row: WeeklyPlanRow = sqlx::query_as(&format!(
+    pub async fn create(
+        &self,
+        workspace_id: WorkspaceId,
+        input: &PlanInput<'_>,
+    ) -> Result<WeeklyPlan> {
+        let row: WeeklyPlanRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO weekly_plans (id, workspace_id, name, description, calendar_id, timezone)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING {PLAN_COLS}"
@@ -215,7 +226,7 @@ impl WeeklyPlanRepo {
 
     /// Fetch a plan with its entries (weekday, then start order).
     pub async fn get(&self, workspace_id: WorkspaceId, id: WeeklyPlanId) -> Result<WeeklyPlan> {
-        let row: WeeklyPlanRow = sqlx::query_as(&format!(
+        let row: WeeklyPlanRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {PLAN_COLS} FROM weekly_plans WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -229,7 +240,7 @@ impl WeeklyPlanRepo {
 
     /// List the workspace's plans (by name), each with its entries.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<WeeklyPlan>> {
-        let rows: Vec<WeeklyPlanRow> = sqlx::query_as(&format!(
+        let rows: Vec<WeeklyPlanRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {PLAN_COLS} FROM weekly_plans WHERE workspace_id = $1
              ORDER BY name ASC, id ASC"
         ))
@@ -238,7 +249,7 @@ impl WeeklyPlanRepo {
         .await
         .map_err(map)?;
         // One query for every entry in the workspace, grouped in memory.
-        let entries: Vec<WeeklyPlanEntryRow> = sqlx::query_as(&format!(
+        let entries: Vec<WeeklyPlanEntryRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {ENTRY_COLS} FROM weekly_plan_entries WHERE workspace_id = $1
              ORDER BY weekday ASC, all_day DESC, start_minute ASC, id ASC"
         ))
@@ -267,7 +278,7 @@ impl WeeklyPlanRepo {
         id: WeeklyPlanId,
         input: &PlanInput<'_>,
     ) -> Result<WeeklyPlan> {
-        let row: WeeklyPlanRow = sqlx::query_as(&format!(
+        let row: WeeklyPlanRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE weekly_plans SET
                  name = $3, description = $4, calendar_id = $5, timezone = $6,
                  updated_at = CURRENT_TIMESTAMP
@@ -313,7 +324,7 @@ impl WeeklyPlanRepo {
         let source = self.get(workspace_id, id).await?;
         let mut tx = self.pool.begin().await.map_err(map)?;
         let new_id = WeeklyPlanId::new();
-        let row: WeeklyPlanRow = sqlx::query_as(&format!(
+        let row: WeeklyPlanRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO weekly_plans (id, workspace_id, name, description, calendar_id, timezone)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING {PLAN_COLS}"
@@ -347,7 +358,7 @@ impl WeeklyPlanRepo {
         workspace_id: WorkspaceId,
         plan_id: WeeklyPlanId,
     ) -> Result<Vec<WeeklyPlanEntry>> {
-        let rows: Vec<WeeklyPlanEntryRow> = sqlx::query_as(&format!(
+        let rows: Vec<WeeklyPlanEntryRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {ENTRY_COLS} FROM weekly_plan_entries
              WHERE plan_id = $1 AND workspace_id = $2
              ORDER BY weekday ASC, all_day DESC, start_minute ASC, id ASC"
@@ -405,7 +416,7 @@ impl WeeklyPlanRepo {
         entry_id: WeeklyPlanEntryId,
         input: &PlanEntryInput<'_>,
     ) -> Result<WeeklyPlanEntry> {
-        let row: WeeklyPlanEntryRow = sqlx::query_as(&format!(
+        let row: WeeklyPlanEntryRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE weekly_plan_entries SET
                  weekday = $4, start_minute = $5, end_minute = $6, all_day = $7,
                  summary = $8, location = $9, body = $10, labels = $11, calendar_id = $12,
@@ -540,7 +551,7 @@ impl WeeklyPlanRepo {
         plan_id: WeeklyPlanId,
         week_start: NaiveDate,
     ) -> Result<Vec<PlanEventLink>> {
-        let rows: Vec<PlanEventLinkRow> = sqlx::query_as(&format!(
+        let rows: Vec<PlanEventLinkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM weekly_plan_events
              WHERE workspace_id = $1 AND plan_id = $2 AND week_start = $3
              ORDER BY event_id ASC"
@@ -561,7 +572,7 @@ impl WeeklyPlanRepo {
         workspace_id: WorkspaceId,
         limit: i64,
     ) -> Result<Vec<PlanEventLink>> {
-        let rows: Vec<PlanEventLinkRow> = sqlx::query_as(&format!(
+        let rows: Vec<PlanEventLinkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM weekly_plan_events
              WHERE workspace_id = $1
              ORDER BY week_start DESC, event_id ASC
@@ -581,7 +592,7 @@ impl WeeklyPlanRepo {
         workspace_id: WorkspaceId,
         event_id: EventId,
     ) -> Result<Option<PlanEventLink>> {
-        let row: Option<PlanEventLinkRow> = sqlx::query_as(&format!(
+        let row: Option<PlanEventLinkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM weekly_plan_events
              WHERE workspace_id = $1 AND event_id = $2"
         ))
@@ -632,7 +643,7 @@ fn insert_entry_query<'q>(
     workspace_id: WorkspaceId,
     plan_id: WeeklyPlanId,
     input: &PlanEntryInput<'q>,
-) -> sqlx::query::QueryAs<'q, Db, WeeklyPlanEntryRow, <Db as sqlx::Database>::Arguments<'q>> {
+) -> sqlx::query::QueryAs<'q, Db, WeeklyPlanEntryRow, <Db as sqlx::Database>::Arguments> {
     sqlx::query_as(INSERT_ENTRY_SQL)
         .bind(WeeklyPlanEntryId::new().into_uuid())
         .bind(workspace_id.into_uuid())
@@ -668,6 +679,9 @@ mod tests {
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
-        assert_eq!(returning, ENTRY_COLS.split_whitespace().collect::<Vec<_>>().join(" "));
+        assert_eq!(
+            returning,
+            ENTRY_COLS.split_whitespace().collect::<Vec<_>>().join(" ")
+        );
     }
 }

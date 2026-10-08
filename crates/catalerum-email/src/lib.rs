@@ -627,7 +627,13 @@ fn content_cursor(emails: &[Email]) -> Cursor {
         hasher.update(k.as_bytes());
         hasher.update(b"\n");
     }
-    Cursor::new(format!("{:x}", hasher.finalize()))
+    Cursor::new(
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    )
 }
 
 /// Cap on bytes read from a provider's HTTP response body. `reqwest::Response::json()`

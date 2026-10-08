@@ -362,7 +362,10 @@ async fn apply_schema(
 fn checksum(sql: &str) -> String {
     let mut h = Sha256::new();
     h.update(sql.as_bytes());
-    format!("{:x}", h.finalize())
+    h.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Body for `POST /db/connections/{id}/migrations` — register a manual migration.

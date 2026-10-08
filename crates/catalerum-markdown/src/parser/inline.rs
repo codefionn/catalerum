@@ -426,8 +426,8 @@ fn rule_of_three(
     opener_can_close: bool,
     closer_can_open: bool,
 ) -> bool {
-    if (opener_can_close || closer_can_open) && (open_len + close_len) % 3 == 0 {
-        return open_len % 3 == 0 && close_len % 3 == 0;
+    if (opener_can_close || closer_can_open) && (open_len + close_len).is_multiple_of(3) {
+        return open_len.is_multiple_of(3) && close_len.is_multiple_of(3);
     }
     true
 }

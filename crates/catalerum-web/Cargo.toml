@@ -20,29 +20,29 @@ crate-type = ["cdylib", "rlib"]
 # `markdown → View` renderer used for streaming chat replies.
 catalerum-markdown = { path = "../catalerum-markdown", features = ["leptos"] }
 console_error_panic_hook = "0.1.7"
-futures = "0.3.32"
+futures = "0.3.34"
 gloo-net = { version = "0.7.0", features = ["websocket", "http"] }
 gloo-timers = "0.4.0"
 # `js-sys` (typed-array bridge) + `wasm-bindgen-futures` (`JsFuture`) back the
 # Files panel's upload path: read a picked `File`'s bytes (a JS `Promise`) and
 # `PUT` them as a `Uint8Array` body. Both are already in the dependency graph
 # (transitive via web-sys/leptos); declared here so we can call them directly.
-js-sys = "0.3.102"
-leptos = { version = "0.8.3", features = ["csr"] }
-leptos_router = "0.8.3"
+js-sys = "0.3.106"
+leptos = { version = "0.8.22", features = ["csr"] }
+leptos_router = "0.8.17"
 # Material Design SVG strings used by the shared icon component. It only uses
 # the ICON_* string constants, so the framework integration is unnecessary.
 md-icons = { version = "0.4.0", default-features = false }
-serde = "1.0.228"
-serde_json = "1.0.150"
-wasm-bindgen = "0.2.125"
-wasm-bindgen-futures = "0.4"
+serde = "1.0.229"
+serde_json = "1.0.151"
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
 # Features enable the browser bindings this crate calls directly: the dev
 # magic-link token plumbing (`Window`/`Storage`/`Location`), a per-panel
 # conversation id (`Crypto::random_uuid`), and the Files panel's file-upload
 # control (`<input type=file>` → `File`/`Blob` byte read). The base `web-sys`
 # dependency was already declared by Scaffold; this only turns on feature gates.
-web-sys = { version = "0.3.102", features = [
+web-sys = { version = "0.3.106", features = [
     "Window", "Storage", "Location", "History", "Crypto", "Document",
     "Event", "EventTarget", "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement",
     "MouseEvent",

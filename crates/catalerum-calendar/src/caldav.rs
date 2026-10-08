@@ -715,7 +715,7 @@ fn etagset_cursor(ms: &MultiStatus) -> Cursor {
     pairs.sort();
     let mut hasher = Sha256::new();
     hasher.update(pairs.join("\n").as_bytes());
-    Cursor::new(format!("etagset:{:x}", hasher.finalize()))
+    Cursor::new(format!("etagset:{}", crate::digest_hex(hasher.finalize())))
 }
 
 fn xml_escape(s: &str) -> String {

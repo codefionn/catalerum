@@ -28,7 +28,7 @@ export CATALERUM_CONFIG := env_var_or_default("CATALERUM_CONFIG", "config/catale
 # LLMLEAF_CONFIG env var always wins. The config listens on 0.0.0.0:8088
 # (catalerum's [llm].base_url); the dev config exposes the `catalerum-dev` consumer
 # key whose base64("id:password") catalerum sends as its bearer.
-export LLMLEAF_IMAGE := env_var_or_default("LLMLEAF_IMAGE", "quay.io/codefionn/llmleaf:0.2.5")
+export LLMLEAF_IMAGE := env_var_or_default("LLMLEAF_IMAGE", "quay.io/codefionn/llmleaf:0.5.0")
 export LLMLEAF_CONFIG := env_var_or_default("LLMLEAF_CONFIG", `test -f config/llmleaf.prod.toml && echo config/llmleaf.prod.toml || echo config/llmleaf.dev.toml`)
 
 # Default: list recipes.

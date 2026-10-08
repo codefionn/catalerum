@@ -21,7 +21,7 @@ use catalerum_core::WorkspaceId;
 use catalerum_ingest::{run_collect_sql_with, AutomationContext, CollectPayload};
 use catalerum_store::{NewAutomation, SecretStore};
 use serde_json::{json, Value};
-use sqlx::{Connection as _, Executor as _, PgConnection};
+use sqlx::{AssertSqlSafe, Connection as _, Executor as _, PgConnection};
 
 fn db_url() -> Option<String> {
     std::env::var("CATALERUM_TEST_DATABASE_URL")
@@ -88,21 +88,22 @@ async fn collect_sql_fires_one_run_per_new_row_in_wildcard_tables() {
     let (host, port, database, username, password) = parse_pg_url(&url);
     let schema = format!("csql_{}", uuid::Uuid::new_v4().simple());
     let mut ext = PgConnection::connect(&url).await.expect("external conn");
-    ext.execute(format!(r#"CREATE SCHEMA "{schema}""#).as_str())
+    ext.execute(AssertSqlSafe(format!(r#"CREATE SCHEMA "{schema}""#)))
         .await
         .expect("create schema");
     for table in ["orders_a", "orders_b"] {
-        ext.execute(
-            format!(r#"CREATE TABLE "{schema}"."{table}" (id bigserial PRIMARY KEY, note text)"#)
-                .as_str(),
-        )
+        ext.execute(AssertSqlSafe(format!(
+            r#"CREATE TABLE "{schema}"."{table}" (id bigserial PRIMARY KEY, note text)"#
+        )))
         .await
         .expect("create table");
     }
     // Pre-existing rows must never fire (the first poll anchors, not replays).
-    ext.execute(format!(r#"INSERT INTO "{schema}"."orders_a" (note) VALUES ('old')"#).as_str())
-        .await
-        .expect("seed row");
+    ext.execute(AssertSqlSafe(format!(
+        r#"INSERT INTO "{schema}"."orders_a" (note) VALUES ('old')"#
+    )))
+    .await
+    .expect("seed row");
 
     // The connection row: config in the clear, password sealed in the secret store.
     let secrets =
@@ -158,15 +159,16 @@ async fn collect_sql_fires_one_run_per_new_row_in_wildcard_tables() {
     assert_eq!(report.runs_fired, 0, "pre-existing rows never fire");
 
     // New inserts across both tables → one run per row, all committed.
-    ext.execute(
-        format!(r#"INSERT INTO "{schema}"."orders_a" (note) VALUES ('a1'), ('a2'), ('a3')"#)
-            .as_str(),
-    )
+    ext.execute(AssertSqlSafe(format!(
+        r#"INSERT INTO "{schema}"."orders_a" (note) VALUES ('a1'), ('a2'), ('a3')"#
+    )))
     .await
     .expect("insert a");
-    ext.execute(format!(r#"INSERT INTO "{schema}"."orders_b" (note) VALUES ('b1')"#).as_str())
-        .await
-        .expect("insert b");
+    ext.execute(AssertSqlSafe(format!(
+        r#"INSERT INTO "{schema}"."orders_b" (note) VALUES ('b1')"#
+    )))
+    .await
+    .expect("insert b");
     let report = poll().await.expect("poll 2");
     assert_eq!(report.runs_fired, 4, "one run per newly-inserted row");
     assert_eq!(report.committed, 4, "fire-and-forget commits every row");
@@ -194,24 +196,25 @@ async fn collect_sql_fires_one_run_per_new_row_in_wildcard_tables() {
 
     // A table created AFTER wiring that matches the wildcard joins automatically:
     // first sight anchors it, then its inserts fire.
-    ext.execute(
-        format!(r#"CREATE TABLE "{schema}"."orders_c" (id bigserial PRIMARY KEY, note text)"#)
-            .as_str(),
-    )
+    ext.execute(AssertSqlSafe(format!(
+        r#"CREATE TABLE "{schema}"."orders_c" (id bigserial PRIMARY KEY, note text)"#
+    )))
     .await
     .expect("late table");
     let report = poll().await.expect("poll 4");
     assert_eq!(report.sources, 3, "the late-created table is discovered");
     assert_eq!(report.runs_fired, 0, "its first sight anchors, never fires");
-    ext.execute(format!(r#"INSERT INTO "{schema}"."orders_c" (note) VALUES ('c1')"#).as_str())
-        .await
-        .expect("insert c");
+    ext.execute(AssertSqlSafe(format!(
+        r#"INSERT INTO "{schema}"."orders_c" (note) VALUES ('c1')"#
+    )))
+    .await
+    .expect("insert c");
     let report = poll().await.expect("poll 5");
     assert_eq!(report.runs_fired, 1, "the late table's new row fires");
 
     // Best-effort cleanup of the shared server's schema.
     let _ = ext
-        .execute(format!(r#"DROP SCHEMA "{schema}" CASCADE"#).as_str())
+        .execute(AssertSqlSafe(format!(r#"DROP SCHEMA "{schema}" CASCADE"#)))
         .await;
     let _ = ext.close().await;
 }

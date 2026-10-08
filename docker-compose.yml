@@ -97,7 +97,7 @@ services:
   # healthcheck — the binary binds near-instantly. Config resolves from the CLI
   # arg passed as `command`.
   llmleaf:
-    image: ${LLMLEAF_IMAGE:-quay.io/codefionn/llmleaf:0.2.5}
+    image: ${LLMLEAF_IMAGE:-quay.io/codefionn/llmleaf:0.5.0}
     container_name: catalerum-llmleaf
     command: ["/etc/llmleaf/llmleaf.toml"]
     # Forward provider API keys from the host into the container. A real-provider

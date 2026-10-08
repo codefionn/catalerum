@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
-use sqlx::{Connection, Executor, PgConnection};
+use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 
 use catalerum_backup::BackupEngine;
 use catalerum_core::model::Author;
@@ -44,7 +44,7 @@ async fn isolated_store(base_url: &str) -> (Store, String) {
         .await
         .expect("connect to maintenance db");
     admin
-        .execute(format!(r#"CREATE DATABASE "{db_name}""#).as_str())
+        .execute(AssertSqlSafe(format!(r#"CREATE DATABASE "{db_name}""#)))
         .await
         .expect("CREATE DATABASE");
     let _ = admin.close().await;
@@ -264,7 +264,7 @@ async fn backup_restore_round_trips_todays_fk_schema() {
     // --- source DB: seed + back up ------------------------------------------
     let (src, _src_db) = isolated_store(&url).await;
     src.pool()
-        .execute(seed.as_str())
+        .execute(AssertSqlSafe(seed.as_str()))
         .await
         .expect("seed schema");
 
@@ -321,7 +321,7 @@ async fn backup_restore_round_trips_todays_fk_schema() {
 
     let pool = dst.pool();
     let scalar_i64 = |sql: String| async move {
-        sqlx::query_scalar::<_, i64>(&sql)
+        sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
             .fetch_one(pool)
             .await
             .expect("scalar query")
@@ -529,7 +529,7 @@ async fn backup_restore_dependency_ordered_path_loads_fk_graph() {
     // --- source DB: seed + back up ------------------------------------------
     let (src, _src_db) = isolated_store(&url).await;
     src.pool()
-        .execute(seed.as_str())
+        .execute(AssertSqlSafe(seed.as_str()))
         .await
         .expect("seed schema");
 
@@ -556,7 +556,7 @@ async fn backup_restore_dependency_ordered_path_loads_fk_graph() {
 
     let pool = dst.pool();
     let scalar_i64 = |sql: String| async move {
-        sqlx::query_scalar::<_, i64>(&sql)
+        sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
             .fetch_one(pool)
             .await
             .expect("scalar query")

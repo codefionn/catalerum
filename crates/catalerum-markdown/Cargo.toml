@@ -19,14 +19,14 @@ leptos = ["dep:leptos"]
 # wasm simd128) on stable; it is already in the workspace lock graph. We use it
 # for the cheap single/double-byte scans and pair it with our own nibble-table
 # membership scanner (`scan.rs`) for the larger inline-special set.
-memchr = "2"
+memchr = "2.8.3"
 # Optional: only compiled when the `leptos` feature is on (i.e. inside the wasm
 # web build). Kept feature-bare here; `catalerum-web` selects the CSR backend and
 # Cargo unifies the features across the graph.
-leptos = { version = "0.8.3", optional = true, default-features = false }
+leptos = { version = "0.8.22", optional = true, default-features = false }
 
 [dev-dependencies]
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 
 [[bench]]
 name = "parse"

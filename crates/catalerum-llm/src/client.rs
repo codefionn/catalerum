@@ -27,7 +27,7 @@ use crate::LlmTraceConfig;
 /// Construct with [`OpenRouterClient::new`] (base URL + API key) or
 /// [`OpenRouterClient::builder`] for finer control. Cheap to clone (the inner
 /// SDK client wraps an `Arc`-backed [`reqwest::Client`]).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OpenRouterClient {
     inner: std::result::Result<llmleaf_client::Client, String>,
     base_url: String,
@@ -37,6 +37,17 @@ pub struct OpenRouterClient {
     default_models: Vec<String>,
     /// Per-exporter generation payload capture policy.
     trace: LlmTraceConfig,
+}
+
+impl std::fmt::Debug for OpenRouterClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenRouterClient")
+            .field("sdk_ready", &self.inner.is_ok())
+            .field("default_provider", &self.default_provider)
+            .field("default_models", &self.default_models)
+            .field("trace", &self.trace)
+            .finish()
+    }
 }
 
 impl OpenRouterClient {
@@ -965,6 +976,7 @@ fn to_sdk_message(message: &catalerum_core::llm::ChatMessage) -> llmleaf_client:
             .iter()
             .map(to_sdk_reasoning)
             .collect(),
+        compaction: Vec::new(),
     }
 }
 
@@ -1071,6 +1083,7 @@ fn map_finish_reason(reason: llmleaf_client::FinishReason) -> FinishReason {
         llmleaf_client::FinishReason::ToolCalls => FinishReason::ToolCalls,
         llmleaf_client::FinishReason::Length => FinishReason::Length,
         llmleaf_client::FinishReason::ContentFilter => FinishReason::ContentFilter,
+        llmleaf_client::FinishReason::Compaction => FinishReason::Other,
     }
 }
 
@@ -1145,6 +1158,7 @@ mod tests {
             output,
             usage: None,
             store: Some(false),
+            previous_response_id: None,
             instructions: None,
             max_output_tokens: None,
             temperature: None,

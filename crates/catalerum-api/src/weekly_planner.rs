@@ -66,7 +66,6 @@ impl WeekOutcome {
     }
 
     /// Every event id whose graph projection should be reconciled.
-    #[must_use]
     pub fn touched(&self) -> impl Iterator<Item = EventId> + '_ {
         self.created
             .iter()

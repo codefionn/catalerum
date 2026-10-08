@@ -11,6 +11,8 @@
 //! `"America/New_York"`); absent → **UTC**. So `0 9 * * *` with `tz =
 //! "America/New_York"` fires at 9am New York time (DST-aware), not 9am UTC.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use croner::Cron;
@@ -47,7 +49,7 @@ pub fn validate(cron: &str, tz: Option<&str>) -> Result<(), CronError> {
 }
 
 fn parse(cron: &str) -> Result<Cron, CronError> {
-    Cron::new(cron).parse().map_err(|e| CronError {
+    Cron::from_str(cron).map_err(|e| CronError {
         cron: cron.to_string(),
         message: e.to_string(),
     })

@@ -19,20 +19,20 @@ firecrawl = ["dep:reqwest"]
 browser = ["dep:tokio-tungstenite", "dep:futures-util"]
 
 [dependencies]
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 catalerum-core = { version = "0.1.0", path = "../catalerum-core" }
 ego-tree = "0.11.0"
-futures = "0.3.32"
+futures = "0.3.34"
 scraper = "0.27.0"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["rt", "macros", "time", "net", "sync"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["rt", "macros", "time", "net", "sync"] }
 tracing = "0.1.44"
 url = "2.5.8"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls", "gzip"], optional = true }
-tokio-tungstenite = { version = "0.29.0", optional = true, features = ["rustls-tls-webpki-roots"] }
-futures-util = { version = "0.3.32", optional = true }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "rustls", "gzip"], optional = true }
+tokio-tungstenite = { version = "0.30.0", optional = true, features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3.34", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.53.2", features = ["full"] }

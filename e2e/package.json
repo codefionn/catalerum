@@ -7,6 +7,6 @@
     "test:all-in-one": "playwright test --config playwright.all-in-one.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.1"
+    "@playwright/test": "1.64.0"
   }
 }

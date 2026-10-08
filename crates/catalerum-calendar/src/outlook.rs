@@ -696,7 +696,10 @@ fn snapshot_cursor(items: &[Value]) -> Cursor {
     pairs.sort();
     let mut hasher = Sha256::new();
     hasher.update(pairs.join("\n").as_bytes());
-    Cursor::new(format!("{CURSOR_PREFIX}{:x}", hasher.finalize()))
+    Cursor::new(format!(
+        "{CURSOR_PREFIX}{}",
+        crate::digest_hex(hasher.finalize())
+    ))
 }
 
 // ---------------------------------------------------------------------------

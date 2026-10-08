@@ -17,7 +17,7 @@
 //! get the session as JSON ([`SessionResponse`]) directly by appending
 //! `&format=json`.
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
@@ -91,10 +91,8 @@ async fn hash_password(password: String) -> ApiResult<String> {
         let mut salt_bytes = [0_u8; 16];
         ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut salt_bytes)
             .map_err(|_| ApiError::internal("password salt generation failed"))?;
-        let salt = SaltString::encode_b64(&salt_bytes)
-            .map_err(|e| ApiError::internal(format!("password salt encoding failed: {e}")))?;
         argon2::Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password_with_salt(password.as_bytes(), &salt_bytes)
             .map(|hash| hash.to_string())
             .map_err(|e| ApiError::internal(format!("password hashing failed: {e}")))
     })
@@ -531,6 +529,24 @@ fn hex_nibble(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn password_hash_round_trip() {
+        let password = "correct horse battery staple".to_string();
+        let encoded = hash_password(password.clone()).await.unwrap();
+        assert!(encoded.starts_with("$argon2id$v=19$"));
+        assert!(verify_password(password, encoded.clone()).await);
+        assert!(!verify_password("wrong password".into(), encoded).await);
+        assert!(!verify_password("anything".into(), "invalid hash".into()).await);
+    }
+
+    #[tokio::test]
+    async fn verifies_hash_supported_by_argon2_0_5() {
+        // Argon2 0.5's PHC test vector. Existing accounts keep this format.
+        let encoded = "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc";
+        assert!(verify_password("password".into(), encoded.into()).await);
+        assert!(!verify_password("wrong password".into(), encoded.into()).await);
+    }
 
     #[test]
     fn encodes_query_component() {

@@ -356,7 +356,14 @@ fn configured_credential_ref(workspace_id: WorkspaceId, name: &str) -> String {
     digest.update(workspace_id.to_string().as_bytes());
     digest.update(b"\0external-db\0");
     digest.update(name.as_bytes());
-    format!("cfg-db-{:x}", digest.finalize())
+    format!(
+        "cfg-db-{}",
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
 }
 
 fn validate_configured(

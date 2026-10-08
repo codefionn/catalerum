@@ -46,7 +46,7 @@ address is not `http://localhost:8080`. Keep the API URL's `/api` suffix.
 
 ## Dynamic LLM providers
 
-The image embeds the official `ghcr.io/codefionn/llmleaf:0.2.5` release.
+The image embeds the official `ghcr.io/codefionn/llmleaf:0.5.0` release.
 catalerum is llmleaf's topology control plane: llmleaf polls a token-protected,
 loopback-only endpoint and reconciles provider and route changes without a
 restart. Manage them under **Settings → LLM providers**.

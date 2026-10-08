@@ -396,7 +396,7 @@ fn decode_image_cell(cell: &Value) -> Option<(Vec<u8>, Option<String>)> {
 /// Decode a lowercase/uppercase hex string into bytes (`None` on any non-hex
 /// character or odd length).
 fn decode_hex(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     (0..hex.len())

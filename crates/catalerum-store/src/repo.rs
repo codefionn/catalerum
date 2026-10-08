@@ -33,6 +33,13 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use sqlx::types::Json;
+// Interpolated SQL below uses fixed column lists and locally chosen clauses.
+// Values supplied by callers remain bound parameters.
+macro_rules! assert_sql_safe {
+    ($($args:tt)*) => {
+        sqlx::AssertSqlSafe(format!($($args)*))
+    };
+}
 // Kept as a local alias to avoid obscuring the repository code with backend
 // conditionals. Its concrete type is chosen at compile time in `pool`.
 use crate::DbPool as PgPool;
@@ -2102,7 +2109,7 @@ impl NoteRepo {
     ) -> Result<Note> {
         let id = NoteId::new().into_uuid();
         let (author_kind, author_id) = author_to_parts(author);
-        let row: NoteRow = sqlx::query_as(&format!(
+        let row: NoteRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO notes
                  (id, workspace_id, author_kind, author_id, title, markdown, tags)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -2123,7 +2130,7 @@ impl NoteRepo {
 
     /// Fetch a note, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: NoteId) -> Result<Note> {
-        let row: NoteRow = sqlx::query_as(&format!(
+        let row: NoteRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {NOTE_COLS} FROM notes
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -2144,7 +2151,7 @@ impl NoteRepo {
         workspace_id: WorkspaceId,
         limit: i64,
     ) -> Result<Vec<Note>> {
-        let rows: Vec<NoteRow> = sqlx::query_as(&format!(
+        let rows: Vec<NoteRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {NOTE_COLS} FROM notes
              WHERE workspace_id = $1
              ORDER BY updated_at DESC, id ASC
@@ -2169,7 +2176,7 @@ impl NoteRepo {
         markdown: &str,
         tags: &[String],
     ) -> Result<Note> {
-        let row: NoteRow = sqlx::query_as(&format!(
+        let row: NoteRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE notes SET title = $3, markdown = $4, tags = $5, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {NOTE_COLS}"
@@ -2248,7 +2255,7 @@ impl LinkRepo {
         let (from_kind, from_id) = source_to_parts(from);
         let (to_kind, to_id) = source_to_parts(to);
         let (author_kind, author_id) = author_to_parts(author);
-        let row: LinkRow = sqlx::query_as(&format!(
+        let row: LinkRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO links
                  (id, workspace_id, from_kind, from_id, to_kind, to_id, label, note,
                   author_kind, author_id)
@@ -2275,7 +2282,7 @@ impl LinkRepo {
 
     /// Fetch a link, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: LinkId) -> Result<Link> {
-        let row: LinkRow = sqlx::query_as(&format!(
+        let row: LinkRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM links
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -2294,7 +2301,7 @@ impl LinkRepo {
         workspace_id: WorkspaceId,
         limit: i64,
     ) -> Result<Vec<Link>> {
-        let rows: Vec<LinkRow> = sqlx::query_as(&format!(
+        let rows: Vec<LinkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM links
              WHERE workspace_id = $1
              ORDER BY updated_at DESC, id ASC
@@ -2319,7 +2326,7 @@ impl LinkRepo {
         limit: i64,
     ) -> Result<Vec<Link>> {
         let (kind, id) = source_to_parts(endpoint);
-        let rows: Vec<LinkRow> = sqlx::query_as(&format!(
+        let rows: Vec<LinkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LINK_COLS} FROM links
              WHERE workspace_id = $1
                AND ((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3))
@@ -2401,7 +2408,7 @@ impl ObjectLabelRepo {
         }
         let id = ObjectLabelId::new().into_uuid();
         let (author_kind, author_id) = author_to_parts(author);
-        let row: ObjectLabelRow = sqlx::query_as(&format!(
+        let row: ObjectLabelRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO object_labels
                  (id, workspace_id, store, path, is_dir, label, author_kind, author_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -2430,7 +2437,7 @@ impl ObjectLabelRepo {
         store: &str,
         path: &str,
     ) -> Result<Vec<ObjectLabel>> {
-        let rows: Vec<ObjectLabelRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectLabelRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_LABEL_COLS} FROM object_labels
              WHERE workspace_id = $1 AND store = $2 AND path = $3
              ORDER BY created_at ASC, id ASC"
@@ -2454,7 +2461,7 @@ impl ObjectLabelRepo {
         prefix: &str,
         limit: i64,
     ) -> Result<Vec<ObjectLabel>> {
-        let rows: Vec<ObjectLabelRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectLabelRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_LABEL_COLS} FROM object_labels
              WHERE workspace_id = $1 AND store = $2
                AND ($3 = '' OR starts_with(path, $3))
@@ -2479,7 +2486,7 @@ impl ObjectLabelRepo {
         label: &str,
         limit: i64,
     ) -> Result<Vec<ObjectLabel>> {
-        let rows: Vec<ObjectLabelRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectLabelRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_LABEL_COLS} FROM object_labels
              WHERE workspace_id = $1 AND label = $2
              ORDER BY created_at DESC, id ASC
@@ -2510,7 +2517,7 @@ impl ObjectLabelRepo {
             return Ok(Vec::new());
         }
         let (stores, paths): (Vec<String>, Vec<String>) = pairs.iter().cloned().unzip();
-        let rows: Vec<ObjectLabelRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectLabelRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_LABEL_COLS} FROM object_labels
              WHERE workspace_id = $1
                AND (store, path) IN
@@ -2644,7 +2651,7 @@ impl UiDefinitionRepo {
     ) -> Result<UiDefinition> {
         let id = UiDefinitionId::new().into_uuid();
         let (author_kind, author_id) = author_to_parts(author);
-        let row: UiDefinitionRow = sqlx::query_as(&format!(
+        let row: UiDefinitionRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO ui_definitions
                  (id, workspace_id, author_kind, author_id, name, title, description,
                   spec_version, definition)
@@ -2668,7 +2675,7 @@ impl UiDefinitionRepo {
 
     /// Fetch an emerged UI by id, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: UiDefinitionId) -> Result<UiDefinition> {
-        let row: UiDefinitionRow = sqlx::query_as(&format!(
+        let row: UiDefinitionRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {UI_DEF_COLS} FROM ui_definitions
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -2682,7 +2689,7 @@ impl UiDefinitionRepo {
 
     /// Fetch an emerged UI by its (workspace-unique) name.
     pub async fn get_by_name(&self, workspace_id: WorkspaceId, name: &str) -> Result<UiDefinition> {
-        let row: UiDefinitionRow = sqlx::query_as(&format!(
+        let row: UiDefinitionRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {UI_DEF_COLS} FROM ui_definitions
              WHERE workspace_id = $1 AND name = $2"
         ))
@@ -2698,7 +2705,7 @@ impl UiDefinitionRepo {
     /// `definition` JSONB is returned too; callers wanting a compact list should
     /// project the fields they need.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<UiDefinition>> {
-        let rows: Vec<UiDefinitionRow> = sqlx::query_as(&format!(
+        let rows: Vec<UiDefinitionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {UI_DEF_COLS} FROM ui_definitions
              WHERE workspace_id = $1
              ORDER BY updated_at DESC, id ASC"
@@ -2721,7 +2728,7 @@ impl UiDefinitionRepo {
         expected: i64,
         input: &UiDefinitionInput,
     ) -> Result<UiDefinition> {
-        let row: Option<UiDefinitionRow> = sqlx::query_as(&format!(
+        let row: Option<UiDefinitionRow> = sqlx::query_as(assert_sql_safe!(
             "UPDATE ui_definitions
                 SET name = $4, title = $5, description = $6, definition = $7,
                     version = version + 1, updated_at = CURRENT_TIMESTAMP
@@ -2791,7 +2798,7 @@ impl PendingQuestionRepo {
         questions: &[Question],
     ) -> Result<PendingQuestion> {
         let id = PendingQuestionId::new().into_uuid();
-        let row: PendingQuestionRow = sqlx::query_as(&format!(
+        let row: PendingQuestionRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO pending_questions (id, workspace_id, conversation_id, questions)
              VALUES ($1, $2, $3, $4)
              RETURNING {PENDING_QUESTION_COLS}"
@@ -2813,7 +2820,7 @@ impl PendingQuestionRepo {
         workspace_id: WorkspaceId,
         conversation_id: ConversationId,
     ) -> Result<Option<PendingQuestion>> {
-        let row: Option<PendingQuestionRow> = sqlx::query_as(&format!(
+        let row: Option<PendingQuestionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {PENDING_QUESTION_COLS} FROM pending_questions
              WHERE workspace_id = $1 AND conversation_id = $2 AND resolved_at IS NULL
              ORDER BY created_at DESC
@@ -2861,7 +2868,7 @@ impl PendingQuestionRepo {
         workspace_id: WorkspaceId,
         conversation_id: ConversationId,
     ) -> Result<Vec<PendingQuestion>> {
-        let rows: Vec<PendingQuestionRow> = sqlx::query_as(&format!(
+        let rows: Vec<PendingQuestionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {PENDING_QUESTION_COLS} FROM pending_questions
              WHERE workspace_id = $1 AND conversation_id = $2
              ORDER BY created_at ASC"
@@ -2903,7 +2910,7 @@ impl PendingApprovalRepo {
         reason: &str,
     ) -> Result<PendingApproval> {
         let id = PendingApprovalId::new().into_uuid();
-        let row: PendingApprovalRow = sqlx::query_as(&format!(
+        let row: PendingApprovalRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO pending_approvals
                  (id, workspace_id, conversation_id, tool, arguments, reason)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -2929,7 +2936,7 @@ impl PendingApprovalRepo {
         workspace_id: WorkspaceId,
         conversation_id: ConversationId,
     ) -> Result<Option<PendingApproval>> {
-        let row: Option<PendingApprovalRow> = sqlx::query_as(&format!(
+        let row: Option<PendingApprovalRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {PENDING_APPROVAL_COLS} FROM pending_approvals
              WHERE workspace_id = $1 AND conversation_id = $2 AND resolved_at IS NULL
              ORDER BY created_at DESC
@@ -2957,7 +2964,7 @@ impl PendingApprovalRepo {
             ApprovalDecision::Approved => "approved",
             ApprovalDecision::Rejected => "rejected",
         };
-        let row: Option<PendingApprovalRow> = sqlx::query_as(&format!(
+        let row: Option<PendingApprovalRow> = sqlx::query_as(assert_sql_safe!(
             "UPDATE pending_approvals SET resolved_at = CURRENT_TIMESTAMP, decision = $3
              WHERE workspace_id = $1 AND id = $2 AND resolved_at IS NULL
              RETURNING {PENDING_APPROVAL_COLS}"
@@ -3065,7 +3072,7 @@ impl ConnectionRepo {
         let id = ConnectionId::new().into_uuid();
         let kind_text = connection_kind_to_text(kind)?;
         let config = config.unwrap_or_else(|| serde_json::json!({}));
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO connections (id, workspace_id, kind, name, credential_ref, config)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING {CONNECTION_COLS}"
@@ -3128,7 +3135,7 @@ impl ConnectionRepo {
                  updated_at = CURRENT_TIMESTAMP
              RETURNING {CONNECTION_COLS}"
         );
-        let row: ConnectionRow = sqlx::query_as(&statement)
+        let row: ConnectionRow = sqlx::query_as(sqlx::AssertSqlSafe(statement))
             .bind(id)
             .bind(workspace_id.into_uuid())
             .bind(kind_text)
@@ -3177,7 +3184,7 @@ impl ConnectionRepo {
                  updated_at = CURRENT_TIMESTAMP
              RETURNING {CONNECTION_COLS}"
         );
-        let row: ConnectionRow = sqlx::query_as(&statement)
+        let row: ConnectionRow = sqlx::query_as(sqlx::AssertSqlSafe(statement))
             .bind(id)
             .bind(workspace_id.into_uuid())
             .bind(kind_text)
@@ -3192,7 +3199,7 @@ impl ConnectionRepo {
 
     /// Fetch a connection, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: ConnectionId) -> Result<Connection> {
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {CONNECTION_COLS} FROM connections
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -3211,7 +3218,7 @@ impl ConnectionRepo {
         workspace_id: WorkspaceId,
         id: ConnectionId,
     ) -> Result<ConnectionRow> {
-        sqlx::query_as(&format!(
+        sqlx::query_as(assert_sql_safe!(
             "SELECT {CONNECTION_COLS} FROM connections
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -3224,7 +3231,7 @@ impl ConnectionRepo {
 
     /// List a workspace's connections, newest first.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Connection>> {
-        let rows: Vec<ConnectionRow> = sqlx::query_as(&format!(
+        let rows: Vec<ConnectionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {CONNECTION_COLS} FROM connections
              WHERE workspace_id = $1
              ORDER BY created_at DESC"
@@ -3248,7 +3255,7 @@ impl ConnectionRepo {
         name: &str,
         config: serde_json::Value,
     ) -> Result<Connection> {
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE connections SET name = $3, config = $4, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {CONNECTION_COLS}"
@@ -3273,7 +3280,7 @@ impl ConnectionRepo {
         cursor: Option<&Cursor>,
     ) -> Result<Connection> {
         let token = cursor.map(|c| c.0.as_str());
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE connections SET sync_token = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {CONNECTION_COLS}"
@@ -3308,7 +3315,7 @@ impl ConnectionRepo {
         // `config - 'watch'` removes it. Branch on presence so a clear truly drops
         // the key (rather than storing `null`, which the scan would misread as live).
         let row: ConnectionRow = match watch {
-            Some(v) => sqlx::query_as(&format!(
+            Some(v) => sqlx::query_as(assert_sql_safe!(
                 "UPDATE connections
                     SET config = jsonb_set(COALESCE(config, '{{}}'::jsonb), '{{watch}}', $3::jsonb, true),
                         updated_at = CURRENT_TIMESTAMP
@@ -3321,7 +3328,7 @@ impl ConnectionRepo {
             .fetch_one(&self.pool)
             .await
             .map_err(map)?,
-            None => sqlx::query_as(&format!(
+            None => sqlx::query_as(assert_sql_safe!(
                 "UPDATE connections
                     SET config = COALESCE(config, '{{}}'::jsonb) - 'watch',
                         updated_at = CURRENT_TIMESTAMP
@@ -3347,7 +3354,7 @@ impl ConnectionRepo {
         watch: Option<serde_json::Value>,
     ) -> Result<Connection> {
         let row: ConnectionRow = match watch {
-            Some(value) => sqlx::query_as(&format!(
+            Some(value) => sqlx::query_as(assert_sql_safe!(
                 "UPDATE connections
                     SET config = json_set(COALESCE(config, '{{}}'), '$.watch', json($3)),
                         updated_at = CURRENT_TIMESTAMP
@@ -3360,7 +3367,7 @@ impl ConnectionRepo {
             .fetch_one(&self.pool)
             .await
             .map_err(map)?,
-            None => sqlx::query_as(&format!(
+            None => sqlx::query_as(assert_sql_safe!(
                 "UPDATE connections
                     SET config = json_remove(COALESCE(config, '{{}}'), '$.watch'),
                         updated_at = CURRENT_TIMESTAMP
@@ -3392,7 +3399,7 @@ impl ConnectionRepo {
         id: ConnectionId,
         credential_ref: Option<&str>,
     ) -> Result<Connection> {
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE connections SET credential_ref = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {CONNECTION_COLS}"
@@ -3427,7 +3434,7 @@ impl ConnectionRepo {
         // `jsonb - text[]` deletes every matching top-level key in one shot (leaving
         // the rest of the blob untouched), so this is a single atomic row update.
         let keys: Vec<String> = keys.iter().map(|k| (*k).to_string()).collect();
-        let row: ConnectionRow = sqlx::query_as(&format!(
+        let row: ConnectionRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE connections
                 SET config = COALESCE(config, '{{}}'::jsonb) - $3::text[],
                     updated_at = CURRENT_TIMESTAMP
@@ -3525,7 +3532,7 @@ impl CalendarRepo {
         read_only: bool,
     ) -> Result<Calendar> {
         let id = CalendarId::new().into_uuid();
-        let row: CalendarRow = sqlx::query_as(&format!(
+        let row: CalendarRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO calendars (id, workspace_id, connection_id, external_id, name, read_only)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (connection_id, external_id)
@@ -3558,7 +3565,7 @@ impl CalendarRepo {
         name: &str,
     ) -> Result<Calendar> {
         let id = CalendarId::new().into_uuid();
-        let row: CalendarRow = sqlx::query_as(&format!(
+        let row: CalendarRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO calendars (id, workspace_id, connection_id, external_id, name, read_only)
              VALUES ($1, $2, NULL, $3, $4, FALSE)
              ON CONFLICT (workspace_id, external_id) WHERE connection_id IS NULL
@@ -3577,7 +3584,7 @@ impl CalendarRepo {
 
     /// Fetch a calendar, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: CalendarId) -> Result<Calendar> {
-        let row: CalendarRow = sqlx::query_as(&format!(
+        let row: CalendarRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {CALENDAR_COLS} FROM calendars
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -3595,7 +3602,7 @@ impl CalendarRepo {
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
     ) -> Result<Vec<Calendar>> {
-        let rows: Vec<CalendarRow> = sqlx::query_as(&format!(
+        let rows: Vec<CalendarRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {CALENDAR_COLS} FROM calendars
              WHERE workspace_id = $1 AND connection_id = $2
              ORDER BY name ASC"
@@ -3610,7 +3617,7 @@ impl CalendarRepo {
 
     /// List all calendars in a workspace.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Calendar>> {
-        let rows: Vec<CalendarRow> = sqlx::query_as(&format!(
+        let rows: Vec<CalendarRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {CALENDAR_COLS} FROM calendars
              WHERE workspace_id = $1
              ORDER BY name ASC"
@@ -3717,7 +3724,7 @@ impl BucketRepo {
         prefix: Option<&str>,
     ) -> Result<Bucket> {
         let id = BucketId::new().into_uuid();
-        let row: BucketRow = sqlx::query_as(&format!(
+        let row: BucketRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO buckets (id, workspace_id, connection_id, name, prefix)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (connection_id, name)
@@ -3737,7 +3744,7 @@ impl BucketRepo {
 
     /// Fetch a bucket, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: BucketId) -> Result<Bucket> {
-        let row: BucketRow = sqlx::query_as(&format!(
+        let row: BucketRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {BUCKET_COLS} FROM buckets WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -3753,7 +3760,7 @@ impl BucketRepo {
     /// how a storage-change automation resolves a triggered file back to its
     /// bucket. Names are expected unique per workspace (the newest wins if not).
     pub async fn get_by_name(&self, workspace_id: WorkspaceId, name: &str) -> Result<Bucket> {
-        let row: BucketRow = sqlx::query_as(&format!(
+        let row: BucketRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {BUCKET_COLS} FROM buckets WHERE workspace_id = $1 AND name = $2 \
              ORDER BY created_at DESC LIMIT 1"
         ))
@@ -3767,7 +3774,7 @@ impl BucketRepo {
 
     /// List a workspace's buckets, newest first.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Bucket>> {
-        let rows: Vec<BucketRow> = sqlx::query_as(&format!(
+        let rows: Vec<BucketRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {BUCKET_COLS} FROM buckets WHERE workspace_id = $1 ORDER BY created_at DESC"
         ))
         .bind(workspace_id.into_uuid())
@@ -3843,7 +3850,7 @@ impl ObjectRepo {
     /// so a re-upload doesn't drop the §10 ingest link).
     pub async fn upsert(&self, obj: &UpsertObject<'_>) -> Result<StoredObject> {
         let id = ObjectId::new().into_uuid();
-        let row: ObjectRow = sqlx::query_as(&format!(
+        let row: ObjectRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO objects
                  (id, workspace_id, bucket_id, key, size, content_type, etag, last_modified, sha256)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -3873,7 +3880,7 @@ impl ObjectRepo {
 
     /// Fetch a catalogued object by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: ObjectId) -> Result<StoredObject> {
-        let row: ObjectRow = sqlx::query_as(&format!(
+        let row: ObjectRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_COLS} FROM objects WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -3892,7 +3899,7 @@ impl ObjectRepo {
         id: ObjectId,
         document_id: Option<DocumentId>,
     ) -> Result<StoredObject> {
-        let row: ObjectRow = sqlx::query_as(&format!(
+        let row: ObjectRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE objects SET extracted_text_id = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {OBJECT_COLS}"
@@ -3913,7 +3920,7 @@ impl ObjectRepo {
         bucket_id: BucketId,
         key: &str,
     ) -> Result<StoredObject> {
-        let row: ObjectRow = sqlx::query_as(&format!(
+        let row: ObjectRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_COLS} FROM objects
              WHERE workspace_id = $1 AND bucket_id = $2 AND key = $3"
         ))
@@ -3939,7 +3946,7 @@ impl ObjectRepo {
         prefix: &str,
         limit: i64,
     ) -> Result<Vec<StoredObject>> {
-        let rows: Vec<ObjectRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_COLS} FROM objects
              WHERE workspace_id = $1
                AND ($2 = '' OR starts_with(key, $2))
@@ -3983,7 +3990,7 @@ impl ObjectRepo {
             .iter()
             .map(|(b, s)| (b.into_uuid(), s.clone()))
             .unzip();
-        let rows: Vec<ObjectRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_COLS} FROM objects o
              JOIN unnest($2::uuid[], $3::text[]) AS m(b_id, store_name)
                ON m.b_id = o.bucket_id
@@ -4063,7 +4070,7 @@ impl ObjectRepo {
         workspace_id: WorkspaceId,
         bucket_id: BucketId,
     ) -> Result<Vec<StoredObject>> {
-        let rows: Vec<ObjectRow> = sqlx::query_as(&format!(
+        let rows: Vec<ObjectRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {OBJECT_COLS} FROM objects
              WHERE workspace_id = $1 AND bucket_id = $2
              ORDER BY key ASC"
@@ -4283,7 +4290,7 @@ impl EventRepo {
     /// row id is preserved. Returns the stored event.
     pub async fn upsert_by_uid(&self, event: &UpsertEvent<'_>) -> Result<Event> {
         let id = EventId::new().into_uuid();
-        let row: EventRow = sqlx::query_as(&format!(
+        let row: EventRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO events
                  (id, workspace_id, calendar_id, uid, starts_at, ends_at, all_day,
                   rrule, summary, location, body, attendees, labels, attachments, etag, sequence)
@@ -4337,7 +4344,7 @@ impl EventRepo {
     /// [`upsert_by_uid`]: EventRepo::upsert_by_uid
     pub async fn create(&self, event: &UpsertEvent<'_>) -> Result<Event> {
         let id = EventId::new().into_uuid();
-        let row: EventRow = sqlx::query_as(&format!(
+        let row: EventRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO events
                  (id, workspace_id, calendar_id, uid, starts_at, ends_at, all_day,
                   rrule, summary, location, body, attendees, labels, attachments, etag, sequence)
@@ -4376,7 +4383,7 @@ impl EventRepo {
         id: EventId,
         patch: &EventPatch<'_>,
     ) -> Result<Event> {
-        let row: EventRow = sqlx::query_as(&format!(
+        let row: EventRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE events SET
                  starts_at   = $3,
                  ends_at     = $4,
@@ -4426,7 +4433,7 @@ impl EventRepo {
 
     /// Fetch an event, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: EventId) -> Result<Event> {
-        let row: EventRow = sqlx::query_as(&format!(
+        let row: EventRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {EVENT_COLS} FROM events
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -4448,7 +4455,7 @@ impl EventRepo {
         calendar_id: CalendarId,
         uid: &str,
     ) -> Result<Event> {
-        let row: EventRow = sqlx::query_as(&format!(
+        let row: EventRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {EVENT_COLS} FROM events
              WHERE workspace_id = $1 AND calendar_id = $2 AND uid = $3"
         ))
@@ -4480,7 +4487,7 @@ impl EventRepo {
     ) -> Result<Vec<Event>> {
         // Bind every optional filter and gate it with an `IS NULL OR` clause so
         // the SQL text stays constant (no dynamic string building).
-        let rows: Vec<EventRow> = sqlx::query_as(&format!(
+        let rows: Vec<EventRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EVENT_COLS} FROM events
              WHERE workspace_id = $1
                AND ($2::uuid        IS NULL OR calendar_id = $2)
@@ -4523,7 +4530,7 @@ impl EventRepo {
         // Attendees are a JSONB array of `EntityRef`s; match only their
         // `display_name` values (not the raw JSON text, whose constant keys /
         // UUIDs would false-positive).
-        let rows: Vec<EventRow> = sqlx::query_as(&format!(
+        let rows: Vec<EventRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EVENT_COLS} FROM events
              WHERE workspace_id = $1
                AND ($3::timestamptz IS NULL OR starts_at >= $3)
@@ -4620,7 +4627,7 @@ impl GrantRepo {
         constraints: &Constraints,
     ) -> Result<Grant> {
         let id = GrantId::new().into_uuid();
-        let row: GrantRow = sqlx::query_as(&format!(
+        let row: GrantRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO grants (id, workspace_id, name, capabilities, constraints)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (workspace_id, name)
@@ -4641,7 +4648,7 @@ impl GrantRepo {
 
     /// Fetch a grant, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: GrantId) -> Result<Grant> {
-        let row: GrantRow = sqlx::query_as(&format!(
+        let row: GrantRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {GRANT_COLS} FROM grants WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -4654,7 +4661,7 @@ impl GrantRepo {
 
     /// List a workspace's grants, by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Grant>> {
-        let rows: Vec<GrantRow> = sqlx::query_as(&format!(
+        let rows: Vec<GrantRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {GRANT_COLS} FROM grants WHERE workspace_id = $1 ORDER BY name ASC"
         ))
         .bind(workspace_id.into_uuid())
@@ -4707,7 +4714,7 @@ impl MailboxRepo {
         read_only: bool,
     ) -> Result<Mailbox> {
         let id = MailboxId::new().into_uuid();
-        let row: MailboxRow = sqlx::query_as(&format!(
+        let row: MailboxRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO mailboxes (id, workspace_id, connection_id, external_id, name, read_only)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (connection_id, external_id)
@@ -4728,7 +4735,7 @@ impl MailboxRepo {
 
     /// Fetch a mailbox, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: MailboxId) -> Result<Mailbox> {
-        let row: MailboxRow = sqlx::query_as(&format!(
+        let row: MailboxRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {MAILBOX_COLS} FROM mailboxes WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -4754,7 +4761,7 @@ impl MailboxRepo {
             return Ok(Vec::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(MailboxId::as_uuid).collect();
-        let rows: Vec<MailboxRow> = sqlx::query_as(&format!(
+        let rows: Vec<MailboxRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MAILBOX_COLS} FROM mailboxes WHERE workspace_id = $1 AND id = ANY($2)"
         ))
         .bind(workspace_id.into_uuid())
@@ -4795,7 +4802,7 @@ impl MailboxRepo {
 
     /// List a workspace's mailboxes.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Mailbox>> {
-        let rows: Vec<MailboxRow> = sqlx::query_as(&format!(
+        let rows: Vec<MailboxRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MAILBOX_COLS} FROM mailboxes WHERE workspace_id = $1 ORDER BY name ASC"
         ))
         .bind(workspace_id.into_uuid())
@@ -4830,7 +4837,7 @@ impl EmailRepo {
     /// field is refreshed and `updated_at` bumped; the row id is preserved. The
     /// passed `email`'s `id` is used only on first insert. Returns the stored email.
     pub async fn upsert_by_uid(&self, email: &Email) -> Result<Email> {
-        let row: EmailRow = sqlx::query_as(&format!(
+        let row: EmailRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO emails
                  (id, workspace_id, mailbox_id, uid, message_id, from_addr, to_addrs, cc_addrs,
                   subject, received_at, body_text, body_html, has_attachments, flags)
@@ -4928,7 +4935,7 @@ impl EmailRepo {
         id: EmailId,
         labels: &[String],
     ) -> Result<Email> {
-        let row: EmailRow = sqlx::query_as(&format!(
+        let row: EmailRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE emails SET labels = $1, updated_at = CURRENT_TIMESTAMP \
              WHERE id = $2 AND workspace_id = $3 RETURNING {EMAIL_COLS}"
         ))
@@ -4955,7 +4962,7 @@ impl EmailRepo {
         id: EmailId,
         seen: bool,
     ) -> Result<Email> {
-        let row: EmailRow = sqlx::query_as(&format!(
+        let row: EmailRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE emails SET flags =
                  (SELECT COALESCE(jsonb_agg(tok), '[]'::jsonb)
                   FROM jsonb_array_elements_text(flags) AS tok
@@ -4975,7 +4982,7 @@ impl EmailRepo {
 
     /// Fetch an email by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: EmailId) -> Result<Email> {
-        let row: EmailRow = sqlx::query_as(&format!(
+        let row: EmailRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -4998,7 +5005,7 @@ impl EmailRepo {
             return Ok(Vec::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(EmailId::as_uuid).collect();
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails WHERE workspace_id = $1 AND id = ANY($2)"
         ))
         .bind(workspace_id.into_uuid())
@@ -5040,7 +5047,7 @@ impl EmailRepo {
         mailbox_id: MailboxId,
         uid: &str,
     ) -> Result<Email> {
-        let row: EmailRow = sqlx::query_as(&format!(
+        let row: EmailRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1 AND mailbox_id = $2 AND uid = $3"
         ))
@@ -5059,7 +5066,7 @@ impl EmailRepo {
         workspace_id: WorkspaceId,
         limit: i64,
     ) -> Result<Vec<Email>> {
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1
              ORDER BY received_at DESC NULLS LAST, id ASC
@@ -5084,7 +5091,7 @@ impl EmailRepo {
         workspace_id: WorkspaceId,
         limit: i64,
     ) -> Result<Vec<Email>> {
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1 AND labels = '[]'::jsonb
              ORDER BY received_at DESC NULLS LAST, id ASC
@@ -5105,7 +5112,7 @@ impl EmailRepo {
         mailbox_id: MailboxId,
         limit: i64,
     ) -> Result<Vec<Email>> {
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1 AND mailbox_id = $2
              ORDER BY received_at DESC NULLS LAST, id ASC
@@ -5134,7 +5141,7 @@ impl EmailRepo {
         workspace_id: WorkspaceId,
         message_id: &str,
     ) -> Result<Vec<Email>> {
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1 AND message_id = $2
              ORDER BY received_at DESC NULLS LAST, id ASC"
@@ -5269,7 +5276,7 @@ impl EmailRepo {
         unread: Option<bool>,
         limit: i64,
     ) -> Result<Vec<Email>> {
-        let rows: Vec<EmailRow> = sqlx::query_as(&format!(
+        let rows: Vec<EmailRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {EMAIL_COLS} FROM emails
              WHERE workspace_id = $1
                AND ($2::uuid IS NULL OR mailbox_id = $2)
@@ -5364,7 +5371,7 @@ impl JobQueueRepo {
         run_after: Option<DateTime<Utc>>,
     ) -> Result<JobRow> {
         let id = Uuid::new_v4();
-        let row: JobRow = sqlx::query_as(&format!(
+        let row: JobRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO job_queue (id, workspace_id, kind, payload, run_after)
              VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_TIMESTAMP))
              RETURNING {JOB_COLS}"
@@ -5395,7 +5402,7 @@ impl JobQueueRepo {
         let runnable = "run_after <= CURRENT_TIMESTAMP";
         #[cfg(feature = "sqlite")]
         let runnable = "julianday(run_after) <= julianday(CURRENT_TIMESTAMP)";
-        let row: Option<JobRow> = sqlx::query_as(&format!(
+        let row: Option<JobRow> = sqlx::query_as(assert_sql_safe!(
             "UPDATE job_queue SET
                  status     = 'running',
                  attempts   = attempts + 1,
@@ -5420,19 +5427,20 @@ impl JobQueueRepo {
 
     /// Fetch a job by id (any status), or [`StoreError::NotFound`].
     pub async fn get(&self, id: Uuid) -> Result<JobRow> {
-        let row: JobRow =
-            sqlx::query_as(&format!("SELECT {JOB_COLS} FROM job_queue WHERE id = $1"))
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(map)?;
+        let row: JobRow = sqlx::query_as(assert_sql_safe!(
+            "SELECT {JOB_COLS} FROM job_queue WHERE id = $1"
+        ))
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map)?;
         Ok(row)
     }
 
     /// Mark a running job `done` (terminal, success) and release its lease.
     /// Returns the updated row, or [`StoreError::NotFound`] if the id is unknown.
     pub async fn complete(&self, id: Uuid) -> Result<JobRow> {
-        let row: JobRow = sqlx::query_as(&format!(
+        let row: JobRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE job_queue SET
                  status     = 'done',
                  locked_at  = NULL,
@@ -5464,7 +5472,7 @@ impl JobQueueRepo {
         #[cfg(not(feature = "sqlite"))]
         let backoff_secs = backoff_base.as_secs_f64().max(0.0);
         #[cfg(not(feature = "sqlite"))]
-        let row: JobRow = sqlx::query_as(&format!(
+        let row: JobRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE job_queue SET
                  status     = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
                  run_after  = CASE WHEN attempts >= $2 THEN run_after
@@ -5500,7 +5508,7 @@ impl JobQueueRepo {
                     chrono::Duration::from_std(delay).unwrap_or(chrono::Duration::MAX),
                 )
                 .unwrap_or(DateTime::<Utc>::MAX_UTC);
-            sqlx::query_as(&format!(
+            sqlx::query_as(assert_sql_safe!(
                 "UPDATE job_queue SET
                      status     = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
                      run_after  = CASE WHEN attempts >= $2 THEN run_after ELSE datetime($4) END,
@@ -5550,7 +5558,7 @@ impl JobQueueRepo {
         let expired = "locked_at < $1";
         #[cfg(feature = "sqlite")]
         let expired = "julianday(locked_at) < julianday($1)";
-        let res = sqlx::query(&format!(
+        let res = sqlx::query(assert_sql_safe!(
             "UPDATE job_queue SET
                  status     = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
                  run_after  = CASE WHEN attempts >= $2 THEN run_after ELSE CURRENT_TIMESTAMP END,
@@ -5589,7 +5597,7 @@ impl JobQueueRepo {
         let older = "updated_at < $1";
         #[cfg(feature = "sqlite")]
         let older = "julianday(updated_at) < julianday($1)";
-        let res = sqlx::query(&format!(
+        let res = sqlx::query(assert_sql_safe!(
             "DELETE FROM job_queue
              WHERE status IN ('done', 'failed') AND {older}"
         ))
@@ -5637,7 +5645,7 @@ impl DocumentRepo {
         summary: Option<&str>,
     ) -> Result<Document> {
         let (kind, sid) = source_to_parts(source);
-        let row: DocumentRow = sqlx::query_as(&format!(
+        let row: DocumentRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO documents (id, workspace_id, source_kind, source_id, text, summary)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (workspace_id, source_kind, source_id)
@@ -5665,7 +5673,7 @@ impl DocumentRepo {
         source: &SourceRef,
     ) -> Result<Option<Document>> {
         let (kind, sid) = source_to_parts(source);
-        let row: Option<DocumentRow> = sqlx::query_as(&format!(
+        let row: Option<DocumentRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {DOCUMENT_COLS} FROM documents
              WHERE workspace_id = $1 AND source_kind = $2 AND source_id = $3"
         ))
@@ -5773,7 +5781,7 @@ impl ChunkRepo {
 
         let mut stored = Vec::with_capacity(chunks.len());
         for c in chunks {
-            let row: ChunkRow = sqlx::query_as(&format!(
+            let row: ChunkRow = sqlx::query_as(assert_sql_safe!(
                 "INSERT INTO chunks (id, workspace_id, document_id, ordinal, text, point_id)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  RETURNING {CHUNK_COLS}"
@@ -5800,7 +5808,7 @@ impl ChunkRepo {
         workspace_id: WorkspaceId,
         document_id: DocumentId,
     ) -> Result<Vec<Chunk>> {
-        let rows: Vec<ChunkRow> = sqlx::query_as(&format!(
+        let rows: Vec<ChunkRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {CHUNK_COLS} FROM chunks
              WHERE workspace_id = $1 AND document_id = $2
              ORDER BY ordinal ASC"
@@ -5872,7 +5880,7 @@ impl MemoryRepo {
             }
             None => (None, None),
         };
-        let row: MemoryRow = sqlx::query_as(&format!(
+        let row: MemoryRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO memories
                  (id, workspace_id, scope, user_id, text, source_kind, source_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -5893,7 +5901,7 @@ impl MemoryRepo {
 
     /// Fetch a memory, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: MemoryId) -> Result<Memory> {
-        let row: MemoryRow = sqlx::query_as(&format!(
+        let row: MemoryRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {MEMORY_COLS} FROM memories WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -5918,7 +5926,7 @@ impl MemoryRepo {
             return Ok(Vec::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(MemoryId::as_uuid).collect();
-        let rows: Vec<MemoryRow> = sqlx::query_as(&format!(
+        let rows: Vec<MemoryRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MEMORY_COLS} FROM memories WHERE workspace_id = $1 AND id = ANY($2)"
         ))
         .bind(workspace_id.into_uuid())
@@ -5967,7 +5975,7 @@ impl MemoryRepo {
         user_id: Option<UserId>,
         limit: i64,
     ) -> Result<Vec<Memory>> {
-        let rows: Vec<MemoryRow> = sqlx::query_as(&format!(
+        let rows: Vec<MemoryRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MEMORY_COLS} FROM memories
              WHERE workspace_id = $1
                AND (scope = 'workspace' OR ($2::uuid IS NOT NULL AND user_id = $2))
@@ -5991,7 +5999,7 @@ impl MemoryRepo {
         id: MemoryId,
         text: &str,
     ) -> Result<Memory> {
-        let row: MemoryRow = sqlx::query_as(&format!(
+        let row: MemoryRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE memories SET text = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {MEMORY_COLS}"
@@ -6011,7 +6019,7 @@ impl MemoryRepo {
     /// signals the fact was seen again while the row's id/created_at/scope are kept.
     /// Returns the (unchanged-text) row. [`StoreError::NotFound`] if absent.
     pub async fn touch(&self, workspace_id: WorkspaceId, id: MemoryId) -> Result<Memory> {
-        let row: MemoryRow = sqlx::query_as(&format!(
+        let row: MemoryRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE memories SET updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {MEMORY_COLS}"
@@ -6065,7 +6073,7 @@ impl ProfileRepo {
     /// fields) when none has been created yet — so callers always get a usable
     /// `Profile` without a `NotFound` branch.
     pub async fn get(&self, workspace_id: WorkspaceId, user_id: UserId) -> Result<Profile> {
-        let row: Option<ProfileRow> = sqlx::query_as(&format!(
+        let row: Option<ProfileRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {PROFILE_COLS} FROM profiles WHERE workspace_id = $1 AND user_id = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -6093,7 +6101,7 @@ impl ProfileRepo {
         user_id: UserId,
         fields: &Map,
     ) -> Result<Profile> {
-        let row: ProfileRow = sqlx::query_as(&format!(
+        let row: ProfileRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO profiles (workspace_id, user_id, fields)
              VALUES ($1, $2, $3)
              ON CONFLICT (workspace_id, user_id)
@@ -6135,7 +6143,7 @@ impl LlmSettingsRepo {
     /// fields unset, microphone speed 1.5×) when none exists — so callers always
     /// get a usable value without a `NotFound` branch.
     pub async fn get(&self, workspace_id: WorkspaceId, user_id: UserId) -> Result<LlmSettings> {
-        let row: Option<LlmSettingsRow> = sqlx::query_as(&format!(
+        let row: Option<LlmSettingsRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {LLM_SETTINGS_COLS} FROM llm_settings WHERE workspace_id = $1 AND user_id = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -6177,7 +6185,7 @@ impl LlmSettingsRepo {
         voice_input_speed: f32,
         ocr_model: Option<&str>,
     ) -> Result<LlmSettings> {
-        let row: LlmSettingsRow = sqlx::query_as(&format!(
+        let row: LlmSettingsRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO llm_settings
                  (workspace_id, user_id, chat_model, speech_model, speech_voice, transcription_model,
                   voice_input_speed, ocr_model)
@@ -6216,7 +6224,7 @@ impl LlmSettingsRepo {
         user_id: UserId,
         models: &[String],
     ) -> Result<LlmSettings> {
-        let row: LlmSettingsRow = sqlx::query_as(&format!(
+        let row: LlmSettingsRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO llm_settings (workspace_id, user_id, image_input_models)
              VALUES ($1, $2, $3)
              ON CONFLICT (workspace_id, user_id)
@@ -6258,7 +6266,7 @@ impl SearchSettingsRepo {
     /// (provider unset) when none exists — so callers always get a usable value
     /// without a `NotFound` branch (an unset choice then falls back to config).
     pub async fn get(&self, workspace_id: WorkspaceId, user_id: UserId) -> Result<SearchSettings> {
-        let row: Option<SearchSettingsRow> = sqlx::query_as(&format!(
+        let row: Option<SearchSettingsRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {SEARCH_SETTINGS_COLS} FROM search_settings WHERE workspace_id = $1 AND user_id = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -6286,7 +6294,7 @@ impl SearchSettingsRepo {
         user_id: UserId,
         default_provider: Option<&str>,
     ) -> Result<SearchSettings> {
-        let row: SearchSettingsRow = sqlx::query_as(&format!(
+        let row: SearchSettingsRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO search_settings (workspace_id, user_id, default_provider)
              VALUES ($1, $2, $3)
              ON CONFLICT (workspace_id, user_id)
@@ -6328,7 +6336,7 @@ impl StorageSettingsRepo {
     /// (store unset) when none exists — so callers always get a usable value
     /// without a `NotFound` branch (an unset choice then falls back to config).
     pub async fn get(&self, workspace_id: WorkspaceId, user_id: UserId) -> Result<StorageSettings> {
-        let row: Option<StorageSettingsRow> = sqlx::query_as(&format!(
+        let row: Option<StorageSettingsRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {STORAGE_SETTINGS_COLS} FROM storage_settings WHERE workspace_id = $1 AND user_id = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -6356,7 +6364,7 @@ impl StorageSettingsRepo {
         user_id: UserId,
         default_store: Option<&str>,
     ) -> Result<StorageSettings> {
-        let row: StorageSettingsRow = sqlx::query_as(&format!(
+        let row: StorageSettingsRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO storage_settings (workspace_id, user_id, default_store)
              VALUES ($1, $2, $3)
              ON CONFLICT (workspace_id, user_id)
@@ -6439,7 +6447,7 @@ impl AppDataRepo {
         key: &str,
     ) -> Result<Option<AppDataEntry>> {
         let (app, key) = Self::validate_key(app, key)?;
-        let row: Option<AppDataRow> = sqlx::query_as(&format!(
+        let row: Option<AppDataRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {APP_DATA_COLS} FROM app_data
              WHERE workspace_id = $1 AND app = $2 AND key = $3"
         ))
@@ -6496,7 +6504,7 @@ impl AppDataRepo {
                 )));
             }
         }
-        let row: AppDataRow = sqlx::query_as(&format!(
+        let row: AppDataRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO app_data (workspace_id, app, key, value)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (workspace_id, app, key)
@@ -6525,7 +6533,7 @@ impl AppDataRepo {
         if app.is_empty() {
             return Err(StoreError::invalid("`app` must not be empty"));
         }
-        let rows: Vec<AppDataRow> = sqlx::query_as(&format!(
+        let rows: Vec<AppDataRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {APP_DATA_COLS} FROM app_data
              WHERE workspace_id = $1 AND app = $2
              ORDER BY key ASC
@@ -6624,7 +6632,7 @@ impl BoardRepo {
             columns.to_vec()
         };
         let mut tx = self.pool.begin().await.map_err(map)?;
-        let board: BoardRow = sqlx::query_as(&format!(
+        let board: BoardRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO boards (id, workspace_id, name) VALUES ($1, $2, $3)
              RETURNING {BOARD_COLS}"
         ))
@@ -6637,7 +6645,7 @@ impl BoardRepo {
 
         let mut column_rows = Vec::with_capacity(names.len());
         for (ordinal, col_name) in names.iter().enumerate() {
-            let col: ColumnRow = sqlx::query_as(&format!(
+            let col: ColumnRow = sqlx::query_as(assert_sql_safe!(
                 "INSERT INTO board_columns (id, workspace_id, board_id, name, ordinal)
                  VALUES ($1, $2, $3, $4, $5)
                  RETURNING {COLUMN_COLS}"
@@ -6658,7 +6666,7 @@ impl BoardRepo {
 
     /// Fetch a board with its columns (ordered), workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: BoardId) -> Result<Board> {
-        let board: BoardRow = sqlx::query_as(&format!(
+        let board: BoardRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {BOARD_COLS} FROM boards WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -6672,7 +6680,7 @@ impl BoardRepo {
 
     /// List a workspace's boards (with columns), by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Board>> {
-        let boards: Vec<BoardRow> = sqlx::query_as(&format!(
+        let boards: Vec<BoardRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {BOARD_COLS} FROM boards WHERE workspace_id = $1 ORDER BY name ASC, id ASC"
         ))
         .bind(workspace_id.into_uuid())
@@ -6696,7 +6704,7 @@ impl BoardRepo {
         name: &str,
     ) -> Result<Board> {
         // Confirm the board exists in this workspace first (NotFound, not an FK error).
-        let board: BoardRow = sqlx::query_as(&format!(
+        let board: BoardRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {BOARD_COLS} FROM boards WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(board_id.into_uuid())
@@ -6728,7 +6736,7 @@ impl BoardRepo {
         id: ColumnId,
         name: &str,
     ) -> Result<Board> {
-        let col: ColumnRow = sqlx::query_as(&format!(
+        let col: ColumnRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE board_columns SET name = $3 WHERE id = $1 AND workspace_id = $2
              RETURNING {COLUMN_COLS}"
         ))
@@ -6751,7 +6759,7 @@ impl BoardRepo {
         let row_lock = "FOR UPDATE";
         #[cfg(feature = "sqlite")]
         let row_lock = "";
-        let col: ColumnRow = sqlx::query_as(&format!(
+        let col: ColumnRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {COLUMN_COLS} FROM board_columns
              WHERE id = $1 AND workspace_id = $2 {row_lock}"
         ))
@@ -6800,7 +6808,7 @@ impl BoardRepo {
         id: BoardId,
         name: &str,
     ) -> Result<Board> {
-        let board: BoardRow = sqlx::query_as(&format!(
+        let board: BoardRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE boards SET name = $3 WHERE id = $1 AND workspace_id = $2 RETURNING {BOARD_COLS}"
         ))
         .bind(id.into_uuid())
@@ -6829,7 +6837,7 @@ impl BoardRepo {
     }
 
     async fn columns_of(&self, board_id: BoardId) -> Result<Vec<ColumnRow>> {
-        sqlx::query_as(&format!(
+        sqlx::query_as(assert_sql_safe!(
             "SELECT {COLUMN_COLS} FROM board_columns WHERE board_id = $1 ORDER BY ordinal ASC"
         ))
         .bind(board_id.into_uuid())
@@ -6872,7 +6880,7 @@ impl TaskRepo {
             }
             None => (None, None),
         };
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO tasks
                  (id, workspace_id, board_id, column_id, title, body_md, assignee_kind,
                   assignee_id, ordinal, status)
@@ -6897,7 +6905,7 @@ impl TaskRepo {
 
     /// Fetch a task by id, workspace-scoped. [`StoreError::NotFound`] if absent.
     pub async fn get(&self, workspace_id: WorkspaceId, id: TaskId) -> Result<Task> {
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {TASK_COLS} FROM tasks WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -6923,7 +6931,7 @@ impl TaskRepo {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
-        let rows: Vec<TaskRow> = sqlx::query_as(&format!(
+        let rows: Vec<TaskRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TASK_COLS} FROM tasks
              WHERE workspace_id = $1
                AND (strpos(lower(title), lower($2)) > 0 OR strpos(lower(body_md), lower($2)) > 0)
@@ -6951,7 +6959,7 @@ impl TaskRepo {
         to_column: ColumnId,
         position: Option<i32>,
     ) -> Result<Task> {
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE tasks t SET
                  column_id = $3,
                  ordinal = COALESCE((SELECT max(ordinal) + 1 FROM tasks WHERE column_id = $3), 0),
@@ -6990,7 +6998,7 @@ impl TaskRepo {
         let row_lock = "FOR UPDATE";
         #[cfg(feature = "sqlite")]
         let row_lock = "";
-        let siblings: Vec<(Uuid,)> = sqlx::query_as(&format!(
+        let siblings: Vec<(Uuid,)> = sqlx::query_as(assert_sql_safe!(
             "SELECT id FROM tasks
              WHERE workspace_id = $1 AND column_id = $2 AND id <> $3
              ORDER BY ordinal ASC, id ASC
@@ -7027,7 +7035,7 @@ impl TaskRepo {
         workspace_id: WorkspaceId,
         column_id: ColumnId,
     ) -> Result<Option<Task>> {
-        let row: Option<TaskRow> = sqlx::query_as(&format!(
+        let row: Option<TaskRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TASK_COLS} FROM tasks
              WHERE workspace_id = $1 AND column_id = $2 AND status <> 'done'
              ORDER BY ordinal ASC, id ASC
@@ -7049,7 +7057,7 @@ impl TaskRepo {
         id: TaskId,
         status: TaskStatus,
     ) -> Result<Task> {
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE tasks SET status = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {TASK_COLS}"
@@ -7073,7 +7081,7 @@ impl TaskRepo {
         title: &str,
         body_md: &str,
     ) -> Result<Task> {
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE tasks SET title = $3, body_md = $4, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {TASK_COLS}"
@@ -7109,7 +7117,7 @@ impl TaskRepo {
         workspace_id: WorkspaceId,
         column_id: ColumnId,
     ) -> Result<Vec<Task>> {
-        let rows: Vec<TaskRow> = sqlx::query_as(&format!(
+        let rows: Vec<TaskRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TASK_COLS} FROM tasks
              WHERE workspace_id = $1 AND column_id = $2
              ORDER BY ordinal ASC, id ASC"
@@ -7127,7 +7135,7 @@ impl TaskRepo {
     /// Ordered by `board_id`, then column `ordinal`, then task `ordinal` for a
     /// stable, board-by-board, top-of-column-first sequence.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Task>> {
-        let rows: Vec<TaskRow> = sqlx::query_as(&format!(
+        let rows: Vec<TaskRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TASK_COLS} FROM tasks t
              WHERE t.workspace_id = $1
              ORDER BY t.board_id ASC,
@@ -7208,7 +7216,7 @@ impl SkillRepo {
     /// Create a skill. Errors with [`StoreError::Conflict`] if `name` already
     /// exists in the workspace (the `(workspace_id, name)` unique key).
     pub async fn create(&self, workspace_id: WorkspaceId, skill: &NewSkill) -> Result<Skill> {
-        let row: SkillRow = sqlx::query_as(&format!(
+        let row: SkillRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO skills
                  (id, workspace_id, name, description, instructions_md, tools, code, advertised)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -7235,7 +7243,7 @@ impl SkillRepo {
         workspace_id: WorkspaceId,
         skill: &NewSkill,
     ) -> Result<Skill> {
-        let row: SkillRow = sqlx::query_as(&format!(
+        let row: SkillRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO skills
                  (id, workspace_id, name, description, instructions_md, tools, code, advertised)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -7264,7 +7272,7 @@ impl SkillRepo {
 
     /// Fetch a skill by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: SkillId) -> Result<Skill> {
-        let row: SkillRow = sqlx::query_as(&format!(
+        let row: SkillRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {SKILL_COLS} FROM skills WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -7281,7 +7289,7 @@ impl SkillRepo {
         workspace_id: WorkspaceId,
         name: &str,
     ) -> Result<Option<Skill>> {
-        let row: Option<SkillRow> = sqlx::query_as(&format!(
+        let row: Option<SkillRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {SKILL_COLS} FROM skills WHERE workspace_id = $1 AND name = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -7304,7 +7312,7 @@ impl SkillRepo {
         if names.is_empty() {
             return Ok(Vec::new());
         }
-        let rows: Vec<SkillRow> = sqlx::query_as(&format!(
+        let rows: Vec<SkillRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {SKILL_COLS} FROM skills WHERE workspace_id = $1 AND name = ANY($2)"
         ))
         .bind(workspace_id.into_uuid())
@@ -7365,7 +7373,7 @@ impl SkillRepo {
 
     /// List a workspace's skills, by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Skill>> {
-        let rows: Vec<SkillRow> = sqlx::query_as(&format!(
+        let rows: Vec<SkillRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {SKILL_COLS} FROM skills WHERE workspace_id = $1 ORDER BY name ASC, id ASC"
         ))
         .bind(workspace_id.into_uuid())
@@ -7444,7 +7452,7 @@ impl AgentProfileRepo {
         workspace_id: WorkspaceId,
         profile: &NewAgentProfile,
     ) -> Result<AgentProfile> {
-        let row: AgentProfileRow = sqlx::query_as(&format!(
+        let row: AgentProfileRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO agent_profiles
                  (id, workspace_id, name, model, system_prompt, tools, skills, subagents,
                   channels, grant_id, guard)
@@ -7475,7 +7483,7 @@ impl AgentProfileRepo {
         workspace_id: WorkspaceId,
         profile: &NewAgentProfile,
     ) -> Result<AgentProfile> {
-        let row: AgentProfileRow = sqlx::query_as(&format!(
+        let row: AgentProfileRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO agent_profiles
                  (id, workspace_id, name, model, system_prompt, tools, skills, subagents,
                   channels, grant_id, guard)
@@ -7511,7 +7519,7 @@ impl AgentProfileRepo {
 
     /// Fetch a profile by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: AgentProfileId) -> Result<AgentProfile> {
-        let row: AgentProfileRow = sqlx::query_as(&format!(
+        let row: AgentProfileRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {AGENT_PROFILE_COLS} FROM agent_profiles WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -7529,7 +7537,7 @@ impl AgentProfileRepo {
         workspace_id: WorkspaceId,
         name: &str,
     ) -> Result<Option<AgentProfile>> {
-        let row: Option<AgentProfileRow> = sqlx::query_as(&format!(
+        let row: Option<AgentProfileRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {AGENT_PROFILE_COLS} FROM agent_profiles WHERE workspace_id = $1 AND name = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -7542,7 +7550,7 @@ impl AgentProfileRepo {
 
     /// List a workspace's profiles, by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<AgentProfile>> {
-        let rows: Vec<AgentProfileRow> = sqlx::query_as(&format!(
+        let rows: Vec<AgentProfileRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {AGENT_PROFILE_COLS} FROM agent_profiles WHERE workspace_id = $1 \
              ORDER BY name ASC, id ASC"
         ))
@@ -7561,7 +7569,7 @@ impl AgentProfileRepo {
         workspace_id: WorkspaceId,
         channel: &str,
     ) -> Result<Vec<AgentProfile>> {
-        let rows: Vec<AgentProfileRow> = sqlx::query_as(&format!(
+        let rows: Vec<AgentProfileRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {AGENT_PROFILE_COLS} FROM agent_profiles \
              WHERE workspace_id = $1 AND channels @> $2 \
              ORDER BY name ASC, id ASC"
@@ -7628,7 +7636,7 @@ impl McpServerRepo {
         workspace_id: WorkspaceId,
         server: &NewMcpServerDef,
     ) -> Result<McpServerDef> {
-        let row: McpServerRow = sqlx::query_as(&format!(
+        let row: McpServerRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO mcp_servers
                  (id, workspace_id, name, transport, command, args, env, url, auth, enabled, tools)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -7658,7 +7666,7 @@ impl McpServerRepo {
         workspace_id: WorkspaceId,
         server: &NewMcpServerDef,
     ) -> Result<McpServerDef> {
-        let row: McpServerRow = sqlx::query_as(&format!(
+        let row: McpServerRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO mcp_servers
                  (id, workspace_id, name, transport, command, args, env, url, auth, enabled, tools)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -7698,7 +7706,7 @@ impl McpServerRepo {
         workspace_id: WorkspaceId,
         name: &str,
     ) -> Result<Option<McpServerDef>> {
-        let row: Option<McpServerRow> = sqlx::query_as(&format!(
+        let row: Option<McpServerRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_SERVER_COLS} FROM mcp_servers WHERE workspace_id = $1 AND name = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -7711,7 +7719,7 @@ impl McpServerRepo {
 
     /// List a workspace's servers, by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<McpServerDef>> {
-        let rows: Vec<McpServerRow> = sqlx::query_as(&format!(
+        let rows: Vec<McpServerRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_SERVER_COLS} FROM mcp_servers WHERE workspace_id = $1 \
              ORDER BY name ASC, id ASC"
         ))
@@ -7726,7 +7734,7 @@ impl McpServerRepo {
     /// that reconnects DB-defined servers (SOUL §26). Not workspace-scoped: it
     /// runs at startup before any request, to rebuild the live tool set.
     pub async fn list_enabled(&self) -> Result<Vec<McpServerDef>> {
-        let rows: Vec<McpServerRow> = sqlx::query_as(&format!(
+        let rows: Vec<McpServerRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_SERVER_COLS} FROM mcp_servers WHERE enabled = TRUE \
              ORDER BY workspace_id ASC, name ASC, id ASC"
         ))
@@ -7785,7 +7793,7 @@ impl TerminalSessionRepo {
         workspace_id: WorkspaceId,
         session: &NewTerminalSession,
     ) -> Result<TerminalSession> {
-        let row: TerminalSessionRow = sqlx::query_as(&format!(
+        let row: TerminalSessionRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO terminal_sessions
                  (id, workspace_id, backend, host_dir, sync_prefix, pod_id)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -7809,7 +7817,7 @@ impl TerminalSessionRepo {
         workspace_id: WorkspaceId,
         id: TerminalSessionId,
     ) -> Result<Option<TerminalSession>> {
-        let row: Option<TerminalSessionRow> = sqlx::query_as(&format!(
+        let row: Option<TerminalSessionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TERMINAL_SESSION_COLS} FROM terminal_sessions \
              WHERE workspace_id = $1 AND id = $2"
         ))
@@ -7830,7 +7838,7 @@ impl TerminalSessionRepo {
         status: TerminalSessionStatus,
     ) -> Result<TerminalSession> {
         let closed = !matches!(status, TerminalSessionStatus::Active);
-        let row: TerminalSessionRow = sqlx::query_as(&format!(
+        let row: TerminalSessionRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE terminal_sessions
                 SET status = $3,
                     closed_at = CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE closed_at END
@@ -7875,7 +7883,7 @@ impl TerminalSessionRepo {
         &self,
         workspace_id: WorkspaceId,
     ) -> Result<Vec<TerminalSession>> {
-        let rows: Vec<TerminalSessionRow> = sqlx::query_as(&format!(
+        let rows: Vec<TerminalSessionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TERMINAL_SESSION_COLS} FROM terminal_sessions WHERE workspace_id = $1 \
              ORDER BY created_at DESC, id ASC"
         ))
@@ -7888,7 +7896,7 @@ impl TerminalSessionRepo {
 
     /// List a workspace's **active** sessions, newest first.
     pub async fn list_active(&self, workspace_id: WorkspaceId) -> Result<Vec<TerminalSession>> {
-        let rows: Vec<TerminalSessionRow> = sqlx::query_as(&format!(
+        let rows: Vec<TerminalSessionRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {TERMINAL_SESSION_COLS} FROM terminal_sessions \
              WHERE workspace_id = $1 AND status = 'active' \
              ORDER BY created_at DESC, id ASC"
@@ -7971,7 +7979,7 @@ impl TerminalSessionRepo {
         let heartbeat_expired = "last_seen < $1";
         #[cfg(feature = "sqlite")]
         let heartbeat_expired = "julianday(last_seen) < julianday($1)";
-        let res = sqlx::query(&format!(
+        let res = sqlx::query(assert_sql_safe!(
             "UPDATE terminal_sessions \
                 SET status = 'closed', closed_at = CURRENT_TIMESTAMP \
               WHERE status = 'active' \
@@ -8040,7 +8048,7 @@ impl WorkspaceSandboxRepo {
         workspace_id: WorkspaceId,
         sandbox: &NewWorkspaceSandbox,
     ) -> Result<WorkspaceSandboxRecord> {
-        let row: WorkspaceSandboxRow = sqlx::query_as(&format!(
+        let row: WorkspaceSandboxRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO workspace_sandboxes
                  (workspace_id, backend, image, status, container_ref, volume_ref, pod_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -8070,7 +8078,7 @@ impl WorkspaceSandboxRepo {
 
     /// Fetch a workspace's sandbox record, or `None`.
     pub async fn get(&self, workspace_id: WorkspaceId) -> Result<Option<WorkspaceSandboxRecord>> {
-        let row: Option<WorkspaceSandboxRow> = sqlx::query_as(&format!(
+        let row: Option<WorkspaceSandboxRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {WORKSPACE_SANDBOX_COLS} FROM workspace_sandboxes WHERE workspace_id = $1"
         ))
         .bind(workspace_id.into_uuid())
@@ -8087,7 +8095,7 @@ impl WorkspaceSandboxRepo {
         workspace_id: WorkspaceId,
         status: SandboxState,
     ) -> Result<WorkspaceSandboxRecord> {
-        let row: WorkspaceSandboxRow = sqlx::query_as(&format!(
+        let row: WorkspaceSandboxRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE workspace_sandboxes SET status = $2, updated_at = CURRENT_TIMESTAMP \
               WHERE workspace_id = $1 \
              RETURNING {WORKSPACE_SANDBOX_COLS}"
@@ -8121,7 +8129,7 @@ impl WorkspaceSandboxRepo {
     /// List every sandbox record (all workspaces). For observability + the boot
     /// reconcile; not workspace-scoped by design.
     pub async fn list_all(&self) -> Result<Vec<WorkspaceSandboxRecord>> {
-        let rows: Vec<WorkspaceSandboxRow> = sqlx::query_as(&format!(
+        let rows: Vec<WorkspaceSandboxRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {WORKSPACE_SANDBOX_COLS} FROM workspace_sandboxes ORDER BY created_at ASC"
         ))
         .fetch_all(&self.pool)
@@ -8193,7 +8201,7 @@ impl WorkspaceSandboxRepo {
         let heartbeat_expired = "last_seen < $1";
         #[cfg(feature = "sqlite")]
         let heartbeat_expired = "julianday(last_seen) < julianday($1)";
-        let res = sqlx::query(&format!(
+        let res = sqlx::query(assert_sql_safe!(
             "UPDATE workspace_sandboxes SET status = 'stopped', updated_at = CURRENT_TIMESTAMP \
               WHERE status <> 'stopped' \
                 AND pod_id IS NOT NULL \
@@ -8264,11 +8272,13 @@ impl PodHeartbeatRepo {
         let expired = "last_seen < $1";
         #[cfg(feature = "sqlite")]
         let expired = "julianday(last_seen) < julianday($1)";
-        let res = sqlx::query(&format!("DELETE FROM pod_heartbeats WHERE {expired}"))
-            .bind(cutoff)
-            .execute(&self.pool)
-            .await
-            .map_err(map)?;
+        let res = sqlx::query(assert_sql_safe!(
+            "DELETE FROM pod_heartbeats WHERE {expired}"
+        ))
+        .bind(cutoff)
+        .execute(&self.pool)
+        .await
+        .map_err(map)?;
         Ok(res.rows_affected())
     }
 }
@@ -8318,7 +8328,7 @@ impl AutomationRepo {
         workspace_id: WorkspaceId,
         automation: &NewAutomation,
     ) -> Result<Automation> {
-        let row: AutomationRow = sqlx::query_as(&format!(
+        let row: AutomationRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO automations
                  (id, workspace_id, name, enabled, triggers, condition, actions, spec, grant_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -8346,7 +8356,7 @@ impl AutomationRepo {
         workspace_id: WorkspaceId,
         automation: &NewAutomation,
     ) -> Result<Automation> {
-        let row: AutomationRow = sqlx::query_as(&format!(
+        let row: AutomationRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO automations
                  (id, workspace_id, name, enabled, triggers, condition, actions, spec, grant_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -8377,7 +8387,7 @@ impl AutomationRepo {
 
     /// Fetch an automation by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: AutomationId) -> Result<Automation> {
-        let row: AutomationRow = sqlx::query_as(&format!(
+        let row: AutomationRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {AUTOMATION_COLS} FROM automations WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(id.into_uuid())
@@ -8394,7 +8404,7 @@ impl AutomationRepo {
         workspace_id: WorkspaceId,
         name: &str,
     ) -> Result<Option<Automation>> {
-        let row: Option<AutomationRow> = sqlx::query_as(&format!(
+        let row: Option<AutomationRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {AUTOMATION_COLS} FROM automations WHERE workspace_id = $1 AND name = $2"
         ))
         .bind(workspace_id.into_uuid())
@@ -8407,7 +8417,7 @@ impl AutomationRepo {
 
     /// List a workspace's automations, by name.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<Automation>> {
-        let rows: Vec<AutomationRow> = sqlx::query_as(&format!(
+        let rows: Vec<AutomationRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {AUTOMATION_COLS} FROM automations WHERE workspace_id = $1 ORDER BY name ASC, id ASC"
         ))
         .bind(workspace_id.into_uuid())
@@ -8426,7 +8436,7 @@ impl AutomationRepo {
         id: AutomationId,
         enabled: bool,
     ) -> Result<Automation> {
-        let row: AutomationRow = sqlx::query_as(&format!(
+        let row: AutomationRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE automations SET enabled = $3, updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {AUTOMATION_COLS}"
@@ -8493,7 +8503,7 @@ impl AutomationRunRepo {
         trigger: Option<serde_json::Value>,
         job_id: Option<Uuid>,
     ) -> Result<AutomationRun> {
-        let row: Option<AutomationRunRow> = sqlx::query_as(&format!(
+        let row: Option<AutomationRunRow> = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO automation_runs \
                  (id, workspace_id, automation_id, status, grant_id, trigger, job_id)
              SELECT $1, $2, $3, $4, $5, $6, $7
@@ -8545,7 +8555,7 @@ impl AutomationRunRepo {
         status: RunStatus,
         error: Option<&str>,
     ) -> Result<AutomationRun> {
-        let row: Option<AutomationRunRow> = sqlx::query_as(&format!(
+        let row: Option<AutomationRunRow> = sqlx::query_as(assert_sql_safe!(
             "UPDATE automation_runs SET status = $3, error = $4, finished_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {RUN_COLS}"
@@ -8566,7 +8576,7 @@ impl AutomationRunRepo {
         workspace_id: WorkspaceId,
         run_id: AutomationRunId,
     ) -> Result<AutomationRun> {
-        let row: AutomationRunRow = sqlx::query_as(&format!(
+        let row: AutomationRunRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {RUN_COLS} FROM automation_runs WHERE id = $1 AND workspace_id = $2"
         ))
         .bind(run_id.into_uuid())
@@ -8584,7 +8594,7 @@ impl AutomationRunRepo {
         automation_id: AutomationId,
         limit: i64,
     ) -> Result<Vec<AutomationRun>> {
-        let rows: Vec<AutomationRunRow> = sqlx::query_as(&format!(
+        let rows: Vec<AutomationRunRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {RUN_COLS} FROM automation_runs
              WHERE workspace_id = $1 AND automation_id = $2
              ORDER BY started_at DESC, id DESC LIMIT $3"
@@ -8608,7 +8618,7 @@ impl AutomationRunRepo {
         ordinal: i32,
         action: serde_json::Value,
     ) -> Result<AutomationStep> {
-        let row: Option<AutomationStepRow> = sqlx::query_as(&format!(
+        let row: Option<AutomationStepRow> = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO automation_steps (id, run_id, workspace_id, ordinal, action, status)
              SELECT $1, $2, $3, $4, $5, $6
              WHERE EXISTS (SELECT 1 FROM automation_runs WHERE id = $2 AND workspace_id = $3)
@@ -8636,7 +8646,7 @@ impl AutomationRunRepo {
         output: Option<serde_json::Value>,
         error: Option<&str>,
     ) -> Result<AutomationStep> {
-        let row: Option<AutomationStepRow> = sqlx::query_as(&format!(
+        let row: Option<AutomationStepRow> = sqlx::query_as(assert_sql_safe!(
             "UPDATE automation_steps SET status = $3, output = $4, error = $5, finished_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND workspace_id = $2
              RETURNING {STEP_COLS}"
@@ -8658,7 +8668,7 @@ impl AutomationRunRepo {
         workspace_id: WorkspaceId,
         run_id: AutomationRunId,
     ) -> Result<Vec<AutomationStep>> {
-        let rows: Vec<AutomationStepRow> = sqlx::query_as(&format!(
+        let rows: Vec<AutomationStepRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {STEP_COLS} FROM automation_steps
              WHERE workspace_id = $1 AND run_id = $2
              ORDER BY ordinal ASC, id ASC"
@@ -8845,7 +8855,7 @@ impl McpEndpointRepo {
         input: &McpEndpointInput,
     ) -> Result<McpEndpoint> {
         let (author_kind, author_id) = author_to_parts(author);
-        let row: McpEndpointRow = sqlx::query_as(&format!(
+        let row: McpEndpointRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO mcp_endpoints
                  (id, workspace_id, name, description, script, bucket_name, key_prefix,
                   grant_id, enabled, author_kind, author_id)
@@ -8871,7 +8881,7 @@ impl McpEndpointRepo {
 
     /// Fetch an endpoint by id, scoped to its workspace.
     pub async fn get(&self, workspace_id: WorkspaceId, id: McpEndpointId) -> Result<McpEndpoint> {
-        let row: McpEndpointRow = sqlx::query_as(&format!(
+        let row: McpEndpointRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_ENDPOINT_COLS} FROM mcp_endpoints
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -8885,7 +8895,7 @@ impl McpEndpointRepo {
 
     /// Fetch an endpoint by its (workspace-unique) name — the serve-time lookup.
     pub async fn get_by_name(&self, workspace_id: WorkspaceId, name: &str) -> Result<McpEndpoint> {
-        let row: McpEndpointRow = sqlx::query_as(&format!(
+        let row: McpEndpointRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_ENDPOINT_COLS} FROM mcp_endpoints
              WHERE workspace_id = $1 AND name = $2"
         ))
@@ -8899,7 +8909,7 @@ impl McpEndpointRepo {
 
     /// List a workspace's endpoints, most-recently-edited first.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<McpEndpoint>> {
-        let rows: Vec<McpEndpointRow> = sqlx::query_as(&format!(
+        let rows: Vec<McpEndpointRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_ENDPOINT_COLS} FROM mcp_endpoints
              WHERE workspace_id = $1
              ORDER BY updated_at DESC, id ASC"
@@ -8919,7 +8929,7 @@ impl McpEndpointRepo {
         id: McpEndpointId,
         input: &McpEndpointInput,
     ) -> Result<McpEndpoint> {
-        let row: McpEndpointRow = sqlx::query_as(&format!(
+        let row: McpEndpointRow = sqlx::query_as(assert_sql_safe!(
             "UPDATE mcp_endpoints
                 SET name = $3, description = $4, script = $5, bucket_name = $6,
                     key_prefix = $7, grant_id = $8, enabled = $9, updated_at = CURRENT_TIMESTAMP
@@ -9036,7 +9046,7 @@ impl McpEndpointTokenRepo {
         token_hash: &str,
         expires_at: DateTime<Utc>,
     ) -> Result<McpEndpointToken> {
-        let row: McpEndpointTokenRow = sqlx::query_as(&format!(
+        let row: McpEndpointTokenRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO mcp_endpoint_tokens
                  (id, workspace_id, endpoint_id, token_hash, expires_at)
              VALUES ($1, $2, $3, $4, $5)
@@ -9058,7 +9068,7 @@ impl McpEndpointTokenRepo {
     /// indistinguishable between unknown, revoked, and expired (no probing
     /// signal, mirroring the route's `404`).
     pub async fn get_live_by_token_hash(&self, token_hash: &str) -> Result<McpEndpointToken> {
-        let row: McpEndpointTokenRow = sqlx::query_as(&format!(
+        let row: McpEndpointTokenRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_ENDPOINT_TOKEN_COLS} FROM mcp_endpoint_tokens
              WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP"
         ))
@@ -9077,7 +9087,7 @@ impl McpEndpointTokenRepo {
         workspace_id: WorkspaceId,
         endpoint_id: McpEndpointId,
     ) -> Result<Vec<McpEndpointToken>> {
-        let rows: Vec<McpEndpointTokenRow> = sqlx::query_as(&format!(
+        let rows: Vec<McpEndpointTokenRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {MCP_ENDPOINT_TOKEN_COLS} FROM mcp_endpoint_tokens
              WHERE workspace_id = $1 AND endpoint_id = $2
              ORDER BY created_at DESC, id ASC"
@@ -9132,12 +9142,11 @@ impl McpEndpointTokenRepo {
 
     /// Garbage-collect tokens past their expiry. Returns the count removed.
     pub async fn delete_expired(&self) -> Result<u64> {
-        let res = sqlx::query(
-            "DELETE FROM mcp_endpoint_tokens WHERE expires_at <= CURRENT_TIMESTAMP",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(map)?;
+        let res =
+            sqlx::query("DELETE FROM mcp_endpoint_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
+                .execute(&self.pool)
+                .await
+                .map_err(map)?;
         Ok(res.rows_affected())
     }
 }
@@ -9179,7 +9188,7 @@ impl ComputerAgentRepo {
         name: &str,
         token_hash: &str,
     ) -> Result<ComputerAgent> {
-        let row: ComputerAgentRow = sqlx::query_as(&format!(
+        let row: ComputerAgentRow = sqlx::query_as(assert_sql_safe!(
             "INSERT INTO computer_agents (id, workspace_id, user_id, name, token_hash)
              VALUES ($1, $2, $3, $4, $5)
              RETURNING {COMPUTER_AGENT_COLS}"
@@ -9198,7 +9207,7 @@ impl ComputerAgentRepo {
     /// Look up an **active** (non-revoked) agent by its token hash — the WS
     /// handshake path. A revoked or unknown token yields [`StoreError::NotFound`].
     pub async fn get_active_by_token_hash(&self, token_hash: &str) -> Result<ComputerAgent> {
-        let row: ComputerAgentRow = sqlx::query_as(&format!(
+        let row: ComputerAgentRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {COMPUTER_AGENT_COLS} FROM computer_agents
              WHERE token_hash = $1 AND revoked_at IS NULL"
         ))
@@ -9215,7 +9224,7 @@ impl ComputerAgentRepo {
         workspace_id: WorkspaceId,
         id: ComputerAgentId,
     ) -> Result<ComputerAgent> {
-        let row: ComputerAgentRow = sqlx::query_as(&format!(
+        let row: ComputerAgentRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {COMPUTER_AGENT_COLS} FROM computer_agents
              WHERE id = $1 AND workspace_id = $2"
         ))
@@ -9229,7 +9238,7 @@ impl ComputerAgentRepo {
 
     /// List a workspace's agents (including revoked), most-recently-enrolled first.
     pub async fn list_by_workspace(&self, workspace_id: WorkspaceId) -> Result<Vec<ComputerAgent>> {
-        let rows: Vec<ComputerAgentRow> = sqlx::query_as(&format!(
+        let rows: Vec<ComputerAgentRow> = sqlx::query_as(assert_sql_safe!(
             "SELECT {COMPUTER_AGENT_COLS} FROM computer_agents
              WHERE workspace_id = $1
              ORDER BY created_at DESC, id ASC"

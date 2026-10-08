@@ -90,20 +90,17 @@ pub fn parse_multistatus(xml: &str) -> Result<MultiStatus> {
                 }
             }
             Ok(XmlEvent::Text(text)) => {
-                // Decode the (possibly non-UTF-8) bytes, then resolve XML
-                // entities (`&amp;`, `&lt;`, …) to their literal characters.
-                let decoded = text
-                    .decode()
-                    .map_err(|e| Error::Provider(format!("xml text decode: {e}")))?;
-                let value = quick_xml::escape::unescape(&decoded)
+                // The reader yields UTF-8 text; resolve XML entities to their
+                // literal characters.
+                let value = quick_xml::escape::unescape(text.as_ref())
                     .map(|c| c.into_owned())
-                    .unwrap_or_else(|_| decoded.into_owned());
+                    .unwrap_or_else(|_| text.as_ref().to_owned());
                 handle_value(value, &stack, &mut current, &mut result);
             }
             Ok(XmlEvent::CData(cdata)) => {
                 // CDATA is literal — no entity unescaping. CalDAV servers may
                 // wrap `calendar-data` in CDATA when the ICS contains `<`/`&`.
-                let value = String::from_utf8_lossy(cdata.as_ref()).into_owned();
+                let value = cdata.as_ref().to_owned();
                 handle_value(value, &stack, &mut current, &mut result);
             }
             _ => {}
@@ -180,8 +177,8 @@ fn handle_value(
 }
 
 /// Lowercase the local part of a (possibly prefixed) element name.
-fn local_name(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).to_ascii_lowercase()
+fn local_name(name: &str) -> String {
+    name.to_ascii_lowercase()
 }
 
 /// ETags arrive quoted (`"abc"`, or weak `W/"abc"`); store the bare value.

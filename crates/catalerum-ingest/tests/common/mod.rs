@@ -23,7 +23,7 @@
 use std::time::Duration;
 
 use catalerum_store::{PoolConfig, Store};
-use sqlx::{Connection, Executor, PgConnection};
+use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 
 /// Connect to an **isolated**, freshly-created database derived from `base_url`'s
 /// server. Each call returns a [`Store`] whose `job_queue` is private to this
@@ -38,7 +38,7 @@ pub async fn isolated_store(base_url: &str) -> Store {
         .await
         .expect("connect to maintenance db for CREATE DATABASE");
     admin
-        .execute(format!(r#"CREATE DATABASE "{db_name}""#).as_str())
+        .execute(AssertSqlSafe(format!(r#"CREATE DATABASE "{db_name}""#)))
         .await
         .expect("CREATE DATABASE for isolated test");
     let _ = admin.close().await;

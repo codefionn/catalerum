@@ -1,6 +1,6 @@
 # Build the operator from the workspace root:
 #   docker build -f crates/catalerum-operator/Dockerfile -t catalerum-operator:dev .
-FROM rust:1.85-slim AS build
+FROM rust:1.99-slim-bookworm AS build
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p catalerum-operator
