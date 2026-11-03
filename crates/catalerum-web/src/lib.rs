@@ -15,10 +15,12 @@
 //! - [`ws`] — the chat WebSocket transport ([`ws::ChatSocket`]).
 //! - [`rest`] — the REST client (`/connections`, `/calendars`, `/events`, `/notes`).
 //! - [`components`] — the shell and panels.
+//! - [`md_worker`] — the Markdown Web Worker client (rendering off the UI thread).
 
 pub mod api;
 pub mod auth;
 pub mod components;
+pub mod md_worker;
 pub mod rest;
 pub mod strip_ansi;
 pub mod ws;
@@ -39,6 +41,8 @@ pub fn App() -> impl IntoView {
     // Reflect the persisted colour theme onto <html data-theme=…> before paint so
     // the workbench mounts in the chosen palette (default Midnight when unset).
     components::theme::init_theme();
+    // Load the Markdown worker now so the first message doesn't wait for it.
+    md_worker::warm();
     // A `?code=` one-time handoff (the dev magic-link / SSO browser login
     // redirects here with it, SOUL §18) is exchanged for the real session
     // bearer before any surface mounts — the session token never rides in a
@@ -2149,6 +2153,8 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 .notes-preview pre code { background: transparent; border: 0; padding: 0; }
 .notes-preview a { color: var(--accent); }
 .notes-preview-empty { color: var(--muted); }
+/* Markdown source shown while the worker renders it (components/markdown.rs). */
+.md-pending { white-space: pre-wrap; overflow-wrap: anywhere; }
 .notes-form-error { color: var(--err-fg); font-size: .85rem; }
 .notes-form-actions { display: flex; gap: .5rem; }
 

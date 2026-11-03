@@ -106,7 +106,7 @@ pub fn MarkdownField(
                 <div class="notes-pane-label">"Preview"</div>
                 <div
                     class="notes-preview"
-                    inner_html=move || markdown_preview_html(&markdown.get())
+                    inner_html=markdown_preview_html(move || markdown.get())
                 ></div>
             </section>
         </div>

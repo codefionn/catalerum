@@ -683,7 +683,7 @@ pub fn SkillsPanel() -> impl IntoView {
                                                 view! {
                                                     <div
                                                         class="notes-preview skills-view-md"
-                                                        inner_html=markdown_html(&md)
+                                                        inner_html=markdown_html(md)
                                                     ></div>
                                                 }
                                                     .into_any()

@@ -75,4 +75,6 @@ web-sys = { version = "0.3.106", features = [
     # by the already-enabled `AnalyserNode` for the sound-reactive orb.
     "AudioBuffer", "AudioBufferSourceNode", "AudioScheduledSourceNode",
     "AudioDestinationNode",
+    # Markdown renders in a dedicated Web Worker (`src/md_worker.rs`).
+    "Worker", "MessageEvent",
 ] }

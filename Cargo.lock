@@ -1622,6 +1622,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "catalerum-markdown-worker"
+version = "0.1.0"
+dependencies = [
+ "catalerum-markdown",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "catalerum-mcp"
 version = "0.1.0"
 dependencies = [

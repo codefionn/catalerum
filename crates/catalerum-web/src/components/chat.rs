@@ -28,7 +28,7 @@ use wasm_bindgen_futures::JsFuture;
 
 use super::calendar::read_file;
 use super::emerged::EmergedUi;
-use super::markdown::markdown_html;
+use super::markdown::LiveMarkdown;
 use super::question_form::QuestionForm;
 use super::tool_render::{render_tool_body, tool_summary};
 use crate::api::{
@@ -4382,12 +4382,16 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                             });
                             let row_role =
                                 move || row.with(|l| l.as_ref().map_or(Role::Assistant, |l| l.role));
-                            // One incremental Markdown renderer per row (created once by the
-                            // keyed <For>). Each streaming delta commits only the newly-stable
-                            // blocks — already-emitted HTML is never re-rendered or mutated, so
-                            // the bubble grows append-only with no reflow/flicker, and the work
-                            // per delta is O(new text) not O(whole reply).
-                            let stream = StoredValue::new(catalerum_markdown::StreamRenderer::new());
+                            // One incremental Markdown session per row (created once by the
+                            // keyed <For>), rendered in the Markdown Web Worker. Each streaming
+                            // delta ships only the new text; the worker answers when a block
+                            // becomes stable, and that HTML is appended to `committed` (html,
+                            // byte length of text it covers). Already-emitted HTML is never
+                            // re-rendered, so the bubble grows append-only. Dropping the
+                            // session (reply finished, or row gone) frees it in the worker.
+                            let stream = StoredValue::new(None::<crate::md_worker::MdStream>);
+                            let committed = RwSignal::new((String::new(), 0usize));
+                            let final_md = LiveMarkdown::new();
                             let row_queued =
                                 move || row.with(|l| l.as_ref().is_some_and(|l| l.queued));
                             view! {
@@ -4485,28 +4489,57 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                                         if !show_text {
                                             ().into_any()
                                         } else if role == Role::Assistant && !streaming {
-                                            let rendered = markdown_html(&text);
-                                            view! {
-                                                <div
-                                                    class="msg-text msg-markdown"
-                                                    inner_html=rendered
-                                                ></div>
+                                            stream.update_value(|s| *s = None);
+                                            match final_md.html(&text) {
+                                                Some(rendered) => view! {
+                                                    <div
+                                                        class="msg-text msg-markdown"
+                                                        inner_html=rendered
+                                                    ></div>
+                                                }
+                                                .into_any(),
+                                                // The worker is still on the full render: keep
+                                                // the streamed HTML + plain tail up (no cursor)
+                                                // so the finished reply doesn't flash.
+                                                None => {
+                                                    let (html, n) = committed.get_untracked();
+                                                    let tail = text.get(n..).unwrap_or(&text).to_string();
+                                                    view! {
+                                                        <div class="msg-text msg-markdown msg-streaming">
+                                                            <div inner_html=html></div>
+                                                            <span class="msg-stream-tail">{tail}</span>
+                                                        </div>
+                                                    }
+                                                    .into_any()
+                                                }
                                             }
-                                            .into_any()
                                         } else if role == Role::Assistant {
-                                            // Commit any newly-stable blocks into the per-row
-                                            // renderer (append-only) and show the still-open tail
-                                            // as plain text so a half-written `**bold` never
-                                            // flashes as broken HTML.
-                                            let (committed, tail) = stream
-                                                .try_update_value(|r| {
-                                                    let tail = r.update(&text).to_string();
-                                                    (r.html().to_string(), tail)
+                                            // Ship the new text to the worker session and show the
+                                            // committed HTML plus the still-open tail as plain text,
+                                            // so a half-written `**bold` never flashes as broken HTML.
+                                            stream.update_value(|s| {
+                                                s.get_or_insert_with(|| {
+                                                    // A fresh session (first delta, or a
+                                                    // regenerate reusing this row) starts
+                                                    // from empty HTML.
+                                                    committed.set((String::new(), 0));
+                                                    crate::md_worker::MdStream::new(move |chunk| {
+                                                        committed.try_update(|(html, n)| {
+                                                            if chunk.replace {
+                                                                html.clear();
+                                                            }
+                                                            html.push_str(&chunk.html);
+                                                            *n = chunk.committed;
+                                                        });
+                                                    })
                                                 })
-                                                .unwrap_or_default();
+                                                .update(&text);
+                                            });
+                                            let (html, n) = committed.get();
+                                            let tail = text.get(n..).unwrap_or(&text).to_string();
                                             view! {
                                                 <div class="msg-text msg-markdown msg-streaming">
-                                                    <div inner_html=committed></div>
+                                                    <div inner_html=html></div>
                                                     <span class="msg-stream-tail">
                                                         {tail}
                                                         <span class="msg-cursor">"▍"</span>

@@ -6,6 +6,13 @@
 target = "index.html"
 dist = "dist"
 
+# Write the Markdown worker's cache-busted loader and put its URL in
+# index.html (see inject-md-worker.sh).
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["inject-md-worker.sh"]
+
 [serve]
 # Dev server for the web workbench; the API proxies/serves alongside it.
 address = "0.0.0.0"

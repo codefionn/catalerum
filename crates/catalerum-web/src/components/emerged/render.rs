@@ -21,7 +21,7 @@ use super::state::{now_ms, UiState, MAX_APP_DEPTH};
 use super::ui::EmergedUi;
 use crate::components::charts::{self, ChartOpts, Datum};
 use crate::components::icons::{Icon, MdIcon};
-use crate::components::markdown::markdown_html;
+use crate::components::markdown::reactive_markdown_html;
 use crate::{auth, rest};
 
 /// Hard cap on rendered `for_each` rows (the server caps spec size; this caps the
@@ -484,10 +484,9 @@ fn render_kind(node: UiNode, st: UiState, scope: Scope, depth: usize) -> AnyView
         NodeKind::Heading => heading(&node, st, scope),
         NodeKind::Markdown => {
             let tpl = prop_tpl(&node, "text");
-            let html = move || {
-                st.data
-                    .with(|d| markdown_html(&interpolate(&tpl, d, &scope)))
-            };
+            let html = reactive_markdown_html(move || {
+                st.data.with(|d| interpolate(&tpl, d, &scope))
+            });
             view! { <div class="eu-md msg-markdown" inner_html=html></div> }.into_any()
         }
         NodeKind::Divider => view! { <hr class="eu-divider" /> }.into_any(),

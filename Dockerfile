@@ -134,7 +134,8 @@ COPY . .
 FROM src AS lint
 RUN --mount=type=cache,target=/src/catalerum/target,sharing=locked \
     cargo clippy --workspace --exclude catalerum-web --all-targets -- -D warnings \
- && cargo clippy -p catalerum-web --target wasm32-unknown-unknown -- -D warnings
+ && cargo clippy -p catalerum-web --target wasm32-unknown-unknown -- -D warnings \
+ && cargo clippy -p catalerum-markdown-worker --target wasm32-unknown-unknown -- -D warnings
 
 # ---- test -------------------------------------------------------------------
 # DB-backed tests self-skip unless CATALERUM_TEST_DATABASE_URL is set. An

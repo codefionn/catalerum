@@ -183,7 +183,7 @@ fn note_body(args: Option<&Value>, res: Option<&Value>) -> AnyView {
             {field("Tags", tags)}
         </dl>
         {markdown.map(|m| view! {
-            <div class="msg-tool-md" inner_html=markdown_html(&m)></div>
+            <div class="msg-tool-md" inner_html=markdown_html(m)></div>
         })}
     }
     .into_any()
@@ -239,7 +239,7 @@ fn search_results_view(res: &Value) -> Option<AnyView> {
         .collect();
     Some(
         view! {
-            {answer.map(|a| view! { <div class="msg-tool-md" inner_html=markdown_html(&a)></div> })}
+            {answer.map(|a| view! { <div class="msg-tool-md" inner_html=markdown_html(a)></div> })}
             <ul class="msg-tool-list">{hits}</ul>
         }
         .into_any(),
@@ -458,7 +458,7 @@ fn generic_body(
     let result_view = match (result_val, result_raw) {
         (Some(v), _) => Some(view! { <pre class="msg-tool-out">{truncate(&pretty(v), 8000)}</pre> }.into_any()),
         (None, Some(raw)) if !raw.trim().is_empty() => Some(
-            view! { <div class="msg-tool-md" inner_html=markdown_html(&truncate(raw, 8000))></div> }
+            view! { <div class="msg-tool-md" inner_html=markdown_html(truncate(raw, 8000))></div> }
                 .into_any(),
         ),
         _ => None,

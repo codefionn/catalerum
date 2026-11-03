@@ -30,6 +30,7 @@ members = [
     "crates/catalerum-operator",
     "crates/catalerum-agent",
     "crates/catalerum-web",
+    "crates/catalerum-markdown-worker",
     "crates/catalerum",
     "crates/catalerum-all-in-one",
 ]

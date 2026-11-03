@@ -903,7 +903,7 @@ pub fn TasksPanel() -> impl IntoView {
                 let has_assignee = !assignee.trim().is_empty();
                 let assignee_chip = format!("👤 {assignee}");
                 let body_empty = t.body_md.trim().is_empty();
-                let body_html = markdown_html(&t.body_md);
+                let body_html = markdown_html(t.body_md.clone());
                 let cur_col = t.column_id.clone();
 
                 let status_opts = status_options()

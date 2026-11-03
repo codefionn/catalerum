@@ -456,6 +456,7 @@ fmt:
 lint:
     cargo clippy --workspace --exclude catalerum-web --all-targets -- -D warnings
     cargo clippy -p catalerum-web --target wasm32-unknown-unknown -- -D warnings
+    cargo clippy -p catalerum-markdown-worker --target wasm32-unknown-unknown -- -D warnings
 
 # Compile-check the native workspace (web is wasm; checked separately).
 check:
@@ -463,7 +464,7 @@ check:
 
 # Compile-check the wasm web workbench.
 check-web:
-    cargo check -p catalerum-web --target wasm32-unknown-unknown
+    cargo check -p catalerum-web -p catalerum-markdown-worker --target wasm32-unknown-unknown
 
 # Regenerate the committed WorkspaceSandbox CRD manifest from the Rust types
 # (SOUL §20). Run after changing crates/catalerum-k8s/src/crd.rs.

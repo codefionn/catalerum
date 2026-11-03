@@ -67,6 +67,7 @@ mod parser;
 mod render;
 mod scan;
 mod stream;
+pub mod worker;
 
 pub use event::{Alignment, CodeBlockKind, Event, Tag, TagEnd};
 pub use parser::{parse, Parser};

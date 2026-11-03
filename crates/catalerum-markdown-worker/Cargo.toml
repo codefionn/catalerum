@@ -1,0 +1,19 @@
+[package]
+name = "catalerum-markdown-worker"
+description = "catalerum: Web Worker that renders Markdown off the workbench's main thread"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Built by Trunk from catalerum-web's index.html (`data-type="worker"`) into its
+# own small wasm bundle. Only the Markdown engine and the JS bindings go in, not
+# the workbench. Natively `main` is empty, so the workspace build stays green.
+[dependencies]
+catalerum-markdown = { path = "../catalerum-markdown" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.106"
+wasm-bindgen = "0.2.129"
+web-sys = { version = "0.3.106", features = ["DedicatedWorkerGlobalScope", "MessageEvent"] }
