@@ -693,8 +693,30 @@ pub fn LoginView() -> impl IntoView {
                 sso_login_url.get().as_deref(),
                 &redirect_path,
             );
+            // Navigate this window ourselves instead of following the link. An
+            // installed app window (desktop/Android PWA, home-screen app) hands
+            // clicked links to other origins (the API, then the IdP) to the
+            // system browser, so sign-in finished in a separate browser tab and
+            // the token never reached the app. A scripted top-level navigation
+            // stays in the current window. Modified/middle clicks keep the
+            // browser default.
+            let nav_href = href.clone();
+            let on_click = move |ev: MouseEvent| {
+                if ev.button() != 0
+                    || ev.ctrl_key()
+                    || ev.meta_key()
+                    || ev.shift_key()
+                    || ev.alt_key()
+                {
+                    return;
+                }
+                if let Some(window) = web_sys::window() {
+                    ev.prevent_default();
+                    let _ = window.location().assign(&nav_href);
+                }
+            };
             view! {
-                <a class="wb-login-sso" href=href>
+                <a class="wb-login-sso" href=href on:click=on_click>
                     "Sign in with SSO"
                 </a>
             }
