@@ -47,6 +47,40 @@ impl Action {
     pub fn covers(self, requested: Action) -> bool {
         self == Action::Any || self == requested
     }
+
+    /// The wire token (`read`/`write`/…; `*` for [`Action::Any`]) used in the
+    /// `domain:action[@selector]` capability form.
+    #[must_use]
+    pub fn token(self) -> &'static str {
+        match self {
+            Action::Any => "*",
+            Action::Read => "read",
+            Action::Write => "write",
+            Action::Delete => "delete",
+            Action::Use => "use",
+            Action::Run => "run",
+            Action::Query => "query",
+            Action::Search => "search",
+            Action::Expose => "expose",
+        }
+    }
+
+    /// Parse a wire token back into an action (`*` / `any` → [`Action::Any`]).
+    #[must_use]
+    pub fn from_token(s: &str) -> Option<Action> {
+        Some(match s {
+            "*" | "any" => Action::Any,
+            "read" => Action::Read,
+            "write" => Action::Write,
+            "delete" => Action::Delete,
+            "use" => Action::Use,
+            "run" => Action::Run,
+            "query" => Action::Query,
+            "search" => Action::Search,
+            "expose" => Action::Expose,
+            _ => return None,
+        })
+    }
 }
 
 /// The resource a capability applies to: a domain (`calendar`, `storage`,
@@ -249,6 +283,72 @@ impl Capability {
     #[must_use]
     pub fn covers_for_attenuation(&self, child: &Capability) -> bool {
         self.covers(child) && constraints_subsume(self, child)
+    }
+
+    /// Parse the compact `domain:action[@selector] [{constraints-json}]` form
+    /// (e.g. `exec:run`, `storage:write@local/out/*`,
+    /// `exec:run@bao {"lang":"python"}`), or the owner wildcard `*`.
+    pub fn parse_token(token: &str) -> Result<Capability, String> {
+        let t = token.trim();
+        if t.is_empty() {
+            return Err("empty capability".to_string());
+        }
+        if t == "*" {
+            return Ok(Capability::new(Action::Any, Resource::domain("*")));
+        }
+        let (head, constraints) = match t.find('{') {
+            Some(i) => {
+                let map: BTreeMap<String, Json> = serde_json::from_str(t[i..].trim())
+                    .map_err(|e| format!("bad per-capability constraints JSON ({e})"))?;
+                (t[..i].trim(), map)
+            }
+            None => (t, BTreeMap::new()),
+        };
+        let (core, selector) = match head.split_once('@') {
+            Some((c, s)) => (c.trim(), Some(s.trim().to_string())),
+            None => (head, None),
+        };
+        let (domain, action_str) = core
+            .split_once(':')
+            .ok_or_else(|| format!("expected `domain:action` in `{token}`"))?;
+        let domain = domain.trim();
+        if domain.is_empty() {
+            return Err(format!("missing domain in `{token}`"));
+        }
+        let action = Action::from_token(action_str.trim())
+            .ok_or_else(|| format!("unknown action `{}` in `{token}`", action_str.trim()))?;
+        Ok(Capability {
+            action,
+            resource: Resource {
+                domain: domain.to_string(),
+                selector: selector.filter(|s| !s.is_empty()),
+            },
+            constraints,
+        })
+    }
+
+    /// Render the compact token form [`parse_token`](Self::parse_token) reads.
+    #[must_use]
+    pub fn to_token(&self) -> String {
+        if self.action == Action::Any
+            && self.resource.domain == "*"
+            && self.resource.selector.is_none()
+            && self.constraints.is_empty()
+        {
+            return "*".to_string();
+        }
+        let mut s = format!("{}:{}", self.resource.domain, self.action.token());
+        if let Some(sel) = &self.resource.selector {
+            s.push('@');
+            s.push_str(sel);
+        }
+        if !self.constraints.is_empty() {
+            if let Ok(j) = serde_json::to_string(&self.constraints) {
+                s.push(' ');
+                s.push_str(&j);
+            }
+        }
+        s
     }
 }
 
@@ -477,6 +577,26 @@ pub struct AttenuationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capability_tokens_round_trip() {
+        for t in [
+            "notes:read",
+            "exec:run",
+            "storage:write@local/out/*",
+            "*",
+            r#"exec:run@bao {"lang":"python"}"#,
+        ] {
+            let c = Capability::parse_token(t).unwrap();
+            assert_eq!(c.to_token(), t);
+        }
+        let c = Capability::parse_token("exec:run").unwrap();
+        assert_eq!(c.action, Action::Run);
+        assert_eq!(c.resource.domain, "exec");
+        assert!(Capability::parse_token("nocolon").is_err());
+        assert!(Capability::parse_token("notes:telepathy").is_err());
+        assert!(Capability::parse_token(":read").is_err());
+    }
 
     #[test]
     fn glob_basics() {

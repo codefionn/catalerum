@@ -285,7 +285,7 @@ impl ToolActionRunner {
             capabilities: self
                 .capabilities
                 .clone()
-                .or_else(|| Some(catalerum_iam::base_capabilities(Role::Member))),
+                .or_else(|| Some(default_automation_capabilities())),
             dry_run: false,
             gate: None,
             conversation_id: None,
@@ -357,8 +357,17 @@ fn role_rank(role: Role) -> u8 {
     }
 }
 
+/// The authority an automation runs under when it has **no** §19 grant: the
+/// workspace owner as principal, bounded to base **Member** capabilities (ordinary
+/// read/write — never delete / exec / admin). Shared by [`ToolActionRunner`]'s
+/// context resolution and the authoring-time authority checks
+/// (`tools::automation_debug`), so the diagnosis can never drift from the runtime.
+pub(crate) fn default_automation_capabilities() -> Vec<Capability> {
+    catalerum_iam::base_capabilities(Role::Member)
+}
+
 /// The registry tool that backs an automation [`ActionKind`], if one exists yet.
-fn tool_for(kind: ActionKind) -> Option<&'static str> {
+pub(crate) fn tool_for(kind: ActionKind) -> Option<&'static str> {
     match kind {
         ActionKind::CreateNote => Some("create_note"),
         ActionKind::EditNote => Some("edit_note"),

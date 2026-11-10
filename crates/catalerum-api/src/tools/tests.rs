@@ -3206,9 +3206,10 @@ async fn every_registered_tool_capability_domain_is_role_grantable() {
 
     // Domains that are intentionally NOT role-base — they require an explicit
     // §19 grant or admin authority, so a base role never holding them is correct:
-    // host command exec, MCP server expose, and agent-profile management (admin-only,
-    // like grants — only an Owner/Admin `*` covers `agent_profile:*`; SOUL §19/§25).
-    const PROTECTED: &[&str] = &["exec", "mcp", "agent_profile"];
+    // host command exec, MCP server expose, and agent-profile + grant management
+    // (admin-only — only an Owner/Admin `*` covers `agent_profile:*` / `grant:*`;
+    // SOUL §19/§25).
+    const PROTECTED: &[&str] = &["exec", "mcp", "agent_profile", "grant"];
 
     let names: Vec<String> = registry.names().map(str::to_owned).collect();
     assert!(!names.is_empty(), "the registry should not be empty");
@@ -6818,4 +6819,324 @@ async fn weekly_plan_tools_apply_reapply_and_unapply() {
         .invoke(json!({ "name": "Bad", "timezone": "Mars/Base" }), &ctx)
         .await
         .is_err());
+}
+
+/// Stand-in for an exec-backed tool: `open_terminal` gated `exec:run`, like the
+/// real one (which only registers with an executor configured).
+struct ExecProbeTool;
+
+#[async_trait]
+impl Tool for ExecProbeTool {
+    fn name(&self) -> &str {
+        "open_terminal"
+    }
+    fn required_capability(&self) -> Option<Capability> {
+        Some(Capability::new(Action::Run, Resource::domain("exec")))
+    }
+    fn parameters_schema(&self) -> Json {
+        json!({ "type": "object", "properties": {} })
+    }
+    async fn invoke(&self, _args: Json, _ctx: &ToolContext) -> Result<Json> {
+        Ok(json!({ "session_id": "s" }))
+    }
+}
+
+fn terminal_graph() -> Json {
+    json!({ "graph": {
+        "nodes": [
+            { "id": "daily", "kind": "trigger", "trigger": { "kind": "schedule", "cron": "0 6 * * *" } },
+            { "id": "open", "kind": "action", "action": { "kind": "open_terminal" } },
+            { "id": "note", "kind": "action", "action": { "kind": "create_note", "title": "x" } },
+            { "id": "agent", "kind": "action", "action": { "kind": "llm_agent", "prompt": "p", "tools": ["open_terminal", "no_such_tool"] } }
+        ],
+        "edges": [
+            { "from": "daily", "to": "open" },
+            { "from": "open", "to": "note" },
+            { "from": "note", "to": "agent" }
+        ]
+    }})
+}
+
+/// The authority check flags exactly the nodes the default (base-Member) run
+/// authority can't execute, plus tools the server lacks; a grant holding
+/// `exec:run` clears the authorization findings.
+#[test]
+fn authority_problems_flag_uncovered_and_missing_tools() {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(ExecProbeTool));
+    registry.register(Arc::new(CreateNoteToolProbe));
+    let spec = terminal_graph();
+    let default_caps = RunAuthority::default_authority().capabilities;
+
+    let problems = authority_problems(Some(&registry), Some(&spec), &[], &default_caps);
+    let summary: Vec<(String, String, String)> = problems
+        .iter()
+        .map(|p| {
+            (
+                p["node"].as_str().unwrap().to_string(),
+                p["tool"].as_str().unwrap().to_string(),
+                p["problem"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("open".into(), "open_terminal".into(), "not_authorized".into()),
+            ("agent".into(), "open_terminal".into(), "not_authorized".into()),
+            ("agent".into(), "no_such_tool".into(), "tool_unavailable".into()),
+        ]
+    );
+    assert_eq!(problems[0]["requires"], json!("exec:run"));
+
+    let mut granted = default_caps.clone();
+    granted.push(Capability::new(Action::Run, Resource::domain("exec")));
+    let left = authority_problems(Some(&registry), Some(&spec), &[], &granted);
+    assert_eq!(left.len(), 1, "only the unavailable tool remains: {left:?}");
+
+    // Linear automations are checked too; no registry → nothing to check.
+    let linear = vec![json!({ "kind": "open_terminal" })];
+    assert_eq!(
+        authority_problems(Some(&registry), None, &linear, &default_caps)[0]["node"],
+        json!("actions[0]")
+    );
+    assert!(authority_problems(None, Some(&spec), &[], &default_caps).is_empty());
+}
+
+/// `create_note` stand-in (`notes:write`, which base Member holds).
+struct CreateNoteToolProbe;
+
+#[async_trait]
+impl Tool for CreateNoteToolProbe {
+    fn name(&self) -> &str {
+        "create_note"
+    }
+    fn required_capability(&self) -> Option<Capability> {
+        cap(Action::Write, "notes")
+    }
+    fn parameters_schema(&self) -> Json {
+        json!({ "type": "object", "properties": {} })
+    }
+    async fn invoke(&self, _args: Json, _ctx: &ToolContext) -> Result<Json> {
+        Ok(json!({}))
+    }
+}
+
+/// End-to-end over the registry: authoring an exec-needing automation warns,
+/// `diagnose_automation` names the missing capability, `set_automation_grant`
+/// mints + binds a grant (refusing one that exceeds the caller), the binding
+/// survives a full-replacement `update_automation`, and the run-trail tools read
+/// recorded runs.
+#[tokio::test]
+async fn automation_debug_tools_diagnose_and_fix_run_authority() {
+    let Some(url) = db_url() else {
+        eprintln!("skipping automation debug test: set CATALERUM_TEST_DATABASE_URL or DATABASE_URL");
+        return;
+    };
+    let store = Store::connect(&url).await.expect("store");
+    let ws = store
+        .workspaces()
+        .create("ad", &format!("ad-{}", uuid::Uuid::new_v4()))
+        .await
+        .expect("ws");
+    let mut registry = ToolRegistry::new();
+    register_automation_tools(&mut registry, &store);
+    registry.register(Arc::new(ExecProbeTool));
+    registry.register(Arc::new(CreateNoteToolProbe));
+    let ctx = ToolContext {
+        workspace_id: Some(ws.id),
+        ..Default::default()
+    };
+    let name = format!("cve-{}", uuid::Uuid::new_v4());
+
+    // Authoring warns about the node the default authority can't run.
+    let created = registry
+        .dispatch(
+            "create_automation",
+            json!({ "name": name, "spec": terminal_graph() }),
+            &ctx,
+        )
+        .await
+        .expect("create");
+    let warnings: Vec<&str> = created["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Json::as_str)
+        .collect();
+    assert!(
+        warnings.iter().any(|w| w.contains("node 'open'") && w.contains("exec:run")),
+        "got: {warnings:?}"
+    );
+
+    // diagnose_automation: default authority, the problem, and a fix hint.
+    let diag = registry
+        .dispatch("diagnose_automation", json!({ "name": name }), &ctx)
+        .await
+        .expect("diagnose");
+    assert_eq!(diag["authority"]["source"], json!("default"));
+    assert!(diag["problems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["requires"] == json!("exec:run")));
+    assert!(diag["hints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|h| h.as_str().unwrap().contains("set_automation_grant")));
+
+    // A caller without exec:run can't mint a grant conferring it (attenuation).
+    let mut narrow = RunAuthority::default_authority().capabilities;
+    narrow.push(Capability::new(Action::Any, Resource::domain("grant")));
+    narrow.push(Capability::new(Action::Any, Resource::domain("automation")));
+    let narrow_ctx = ToolContext {
+        workspace_id: Some(ws.id),
+        capabilities: Some(narrow),
+        ..Default::default()
+    };
+    let denied = registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["exec:run"] }),
+            &narrow_ctx,
+        )
+        .await
+        .unwrap_err();
+    assert!(denied.to_string().contains("exceeds your own authority"), "got: {denied}");
+    assert!(registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["notes:telepathy"] }),
+            &ctx,
+        )
+        .await
+        .is_err());
+
+    // Mint + bind: default Member authority plus exec:run.
+    let bound = registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["exec:run"] }),
+            &ctx,
+        )
+        .await
+        .expect("bind");
+    assert_eq!(bound["authority"]["source"], json!("grant"));
+    let caps = bound["authority"]["capabilities"].as_array().unwrap();
+    assert!(caps.contains(&json!("exec:run")));
+    assert!(caps.contains(&json!("notes:write")), "default authority kept");
+    let remaining = bound["remaining_problems"].as_array().unwrap();
+    assert!(
+        remaining.iter().all(|p| p["problem"] == json!("tool_unavailable")),
+        "got: {remaining:?}"
+    );
+
+    // A full-replacement update keeps the grant.
+    let updated = registry
+        .dispatch(
+            "update_automation",
+            json!({ "name": name, "spec": terminal_graph() }),
+            &ctx,
+        )
+        .await
+        .expect("update");
+    assert!(!updated["grant_id"].is_null(), "update_automation kept the grant");
+    assert!(updated["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|w| !w.as_str().unwrap().contains("exec:run")));
+
+    // list_grants shows the binding; the grant can't be re-minted under a name
+    // another automation also uses.
+    let grants = registry
+        .dispatch("list_grants", json!({}), &ctx)
+        .await
+        .expect("grants");
+    let g = grants["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["name"] == json!(format!("automation:{name}")))
+        .expect("minted grant listed");
+    assert_eq!(g["used_by_automations"], json!([name]));
+    let other = format!("other-{}", uuid::Uuid::new_v4());
+    registry
+        .dispatch(
+            "create_automation",
+            json!({ "name": other, "spec": terminal_graph() }),
+            &ctx,
+        )
+        .await
+        .expect("create other");
+    registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": other, "grant": format!("automation:{name}") }),
+            &ctx,
+        )
+        .await
+        .expect("bind shared grant");
+    let clash = registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": other, "grant": format!("automation:{name}"), "capabilities": ["web:read"] }),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+    assert!(clash.to_string().contains("also used by"), "got: {clash}");
+
+    // Run trail: record a failed run with one failed step and read it back.
+    let automation = store
+        .automations()
+        .get_by_name(ws.id, &name)
+        .await
+        .unwrap()
+        .unwrap();
+    let runs = store.automation_runs();
+    let run = runs
+        .start_run(ws.id, automation.id, None, Some(json!({ "kind": "schedule" })), None)
+        .await
+        .expect("start run");
+    let step = runs
+        .add_step(ws.id, run.id, 0, json!({ "node": "open", "kind": "action", "action": { "kind": "open_terminal" } }))
+        .await
+        .expect("step");
+    runs.finish_step(
+        ws.id,
+        step.id,
+        catalerum_core::model::StepStatus::Failed,
+        None,
+        Some("denied"),
+    )
+    .await
+    .expect("finish step");
+    runs.finish_run(ws.id, run.id, catalerum_core::model::RunStatus::Failed, Some("denied"))
+        .await
+        .expect("finish run");
+
+    let listed = registry
+        .dispatch(
+            "list_automation_runs",
+            json!({ "name": name, "status": "failed" }),
+            &ctx,
+        )
+        .await
+        .expect("list runs");
+    assert_eq!(listed["runs"][0]["error"], json!("denied"));
+    assert_eq!(listed["summary"]["consecutive_failures"], json!(1));
+    let detail = registry
+        .dispatch(
+            "get_automation_run",
+            json!({ "run_id": run.id.to_string() }),
+            &ctx,
+        )
+        .await
+        .expect("get run");
+    assert_eq!(detail["automation"], json!(name));
+    assert_eq!(detail["steps"][0]["node"], json!("open"));
+    assert_eq!(detail["steps"][0]["kind"], json!("open_terminal"));
+    assert_eq!(detail["steps"][0]["error"], json!("denied"));
 }

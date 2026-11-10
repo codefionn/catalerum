@@ -535,18 +535,7 @@ impl ToolRegistry {
 /// The lowercase token for an [`Action`](crate::capability::Action), for error
 /// messages (`read`/`write`/`delete`/…).
 fn action_token(action: crate::capability::Action) -> &'static str {
-    use crate::capability::Action;
-    match action {
-        Action::Any => "*",
-        Action::Read => "read",
-        Action::Write => "write",
-        Action::Delete => "delete",
-        Action::Use => "use",
-        Action::Run => "run",
-        Action::Query => "query",
-        Action::Search => "search",
-        Action::Expose => "expose",
-    }
+    action.token()
 }
 
 impl std::fmt::Debug for ToolRegistry {

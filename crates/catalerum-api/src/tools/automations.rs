@@ -345,8 +345,11 @@ impl Tool for CreateAutomationTool {
          exists. On success returns the saved automation plus a `warnings` array of \
          non-fatal issues that did NOT block the save but probably indicate a mistake \
          (e.g. a node not connected to any trigger so it never runs, a trigger wired \
-         to nothing, or a condition branch left unwired) — review it and fix or \
-         confirm. Discover node types with list_automation_node_types / \
+         to nothing, a condition branch left unwired, or a node whose tool the \
+         automation's run authority does not cover) — review it and fix or confirm. \
+         IMPORTANT: an automation does NOT run with your permissions. Without a \
+         grant it runs as the workspace owner limited to base Member capabilities \
+         (no exec/terminal, no delete); bind more with set_automation_grant. Discover node types with list_automation_node_types / \
          search_automation_node_types; dry-run a draft with test_automation first."
     }
     fn parameters_schema(&self) -> Json {
@@ -392,6 +395,10 @@ impl Tool for CreateAutomationTool {
             grant_id: None,
         };
         let automation = self.store.automations().create(ws, &new).await?;
+        // Nodes the run authority can't execute (SOUL §19) — the author's own
+        // permissions are not what the automation runs with.
+        let mut warnings = warnings;
+        warnings.extend(authority_warnings(&self.store, ctx, &automation).await);
         automation_response(automation, warnings)
     }
 }
@@ -415,7 +422,8 @@ impl Tool for UpdateAutomationTool {
          create_automation, and the same `warnings` array of non-fatal issues on the \
          response (e.g. a node not connected to any trigger). Use this to edit an \
          existing automation: get_automation, change the parts you want, then \
-         update_automation with the full new definition."
+         update_automation with the full new definition. The grant the automation \
+         runs under (see set_automation_grant) is kept."
     }
     fn parameters_schema(&self) -> Json {
         let mut props = automation_body_props();
@@ -446,7 +454,16 @@ impl Tool for UpdateAutomationTool {
             .await
             .map_err(Error::invalid)?;
         // Same non-fatal graph diagnostics as create_automation (SOUL §11).
-        let warnings = graph_warnings(spec.as_ref());
+        let mut warnings = graph_warnings(spec.as_ref());
+        // The grant is not part of the definition this tool replaces (it is bound
+        // with set_automation_grant), so keep whatever the automation runs under —
+        // dropping it would silently break every run that needed it.
+        let grant_id = self
+            .store
+            .automations()
+            .get_by_name(ws, &name)
+            .await?
+            .and_then(|a| a.grant_id);
         let new = catalerum_store::NewAutomation {
             name,
             enabled,
@@ -454,9 +471,10 @@ impl Tool for UpdateAutomationTool {
             condition,
             actions,
             spec,
-            grant_id: None,
+            grant_id,
         };
         let automation = self.store.automations().upsert_by_name(ws, &new).await?;
+        warnings.extend(authority_warnings(&self.store, ctx, &automation).await);
         automation_response(automation, warnings)
     }
 }
@@ -592,6 +610,8 @@ impl Tool for EditAutomationTool {
             grant_id: existing.grant_id,
         };
         let automation = self.store.automations().upsert_by_name(ws, &new).await?;
+        let mut warnings = warnings;
+        warnings.extend(authority_warnings(&self.store, ctx, &automation).await);
         automation_response(automation, warnings)
     }
 }
@@ -704,17 +724,28 @@ impl Tool for TestAutomationTool {
          dispatch triggers, node/edge counts, topological run order, and a `warnings` \
          array of non-fatal issues (a node not connected to any trigger, a trigger \
          wired to nothing, a dead condition branch), or the first validation error. \
-         Use this to iterate on a draft before create_automation."
+         `authority_problems_without_grant` lists nodes the saved automation could \
+         not run under its default authority (no grant); bind a grant for those with \
+         set_automation_grant after saving. Use this to iterate on a draft before \
+         create_automation."
     }
     fn parameters_schema(&self) -> Json {
         json!({ "type": "object", "properties": automation_body_props() })
     }
-    async fn invoke(&self, args: Json, _ctx: &ToolContext) -> Result<Json> {
+    async fn invoke(&self, args: Json, ctx: &ToolContext) -> Result<Json> {
         use catalerum_automation::graph::Graph;
         let spec = opt_json_value(&args, "spec");
         let req_triggers = opt_json_array(&args, "triggers");
         let condition = opt_json_value(&args, "condition");
         let actions = opt_json_array(&args, "actions");
+        // A draft has no grant yet: check it against the default authority it would
+        // run under once saved (SOUL §19).
+        let authority = authority_problems(
+            ctx.registry.as_ref(),
+            spec.as_ref(),
+            &actions,
+            &RunAuthority::default_authority().capabilities,
+        );
 
         // A node-graph draft: parse + validate the graph and report its shape.
         if let Some(parsed) = Graph::from_spec(spec.as_ref()) {
@@ -741,6 +772,7 @@ impl Tool for TestAutomationTool {
                 // Non-fatal diagnostics (disconnected node, unwired trigger, dead
                 // condition branch) — the same warnings create/edit surface.
                 "warnings": graph.warnings(),
+                "authority_problems_without_grant": authority,
             }));
         }
 
@@ -760,6 +792,7 @@ impl Tool for TestAutomationTool {
                     // A linear automation is connected by construction — no graph
                     // warnings — but report the field for a uniform response shape.
                     "warnings": Vec::<String>::new(),
+                    "authority_problems_without_grant": authority,
                 }))
             }
             Err(e) => Ok(json!({ "valid": false, "kind": "linear", "error": e.to_string() })),
@@ -784,13 +817,17 @@ impl Tool for RunAutomationTool {
         "Manually run an existing automation once, right now (SOUL §11) — enqueues a \
          durable run that the worker executes out-of-band (its actions have real \
          effects). Returns the enqueued job id; the automation must be enabled to run. \
-         Use this to test a saved automation end-to-end, then inspect its runs."
+         Pass `wait_secs` (max 120) to wait for the run and get its outcome, including \
+         the failing steps' errors. `preflight_problems` lists nodes the run \
+         authority cannot execute. Inspect runs later with list_automation_runs / \
+         get_automation_run, or call diagnose_automation."
     }
     fn parameters_schema(&self) -> Json {
         json!({
             "type": "object",
             "properties": {
-                "name": { "type": "string", "description": "Name of the automation to run now." }
+                "name": { "type": "string", "description": "Name of the automation to run now." },
+                "wait_secs": { "type": "integer", "description": "Wait up to this many seconds (max 120) for the run to finish and return its outcome. Default 0: return right after enqueueing." }
             },
             "required": ["name"]
         })
@@ -809,10 +846,25 @@ impl Tool for RunAutomationTool {
                 "automation '{name}' is disabled; enable it first to run it"
             )));
         }
+        let preflight = authority_warnings(&self.store, ctx, &automation).await;
         let job = catalerum_ingest::enqueue_run_automation(&self.store, ws, automation.id, None)
             .await
             .map_err(|e| Error::provider(format!("failed to enqueue run: {e}")))?;
-        Ok(json!({ "enqueued": true, "automation": name, "job_id": job.to_string() }))
+        let mut out = json!({
+            "enqueued": true,
+            "automation": name,
+            "job_id": job.to_string(),
+            "preflight_problems": preflight,
+        });
+        let wait = args
+            .get("wait_secs")
+            .and_then(Json::as_u64)
+            .unwrap_or(0)
+            .min(MAX_RUN_WAIT_SECS);
+        if wait > 0 {
+            out["run"] = wait_for_job_run(&self.store, ws, job, wait).await?;
+        }
+        Ok(out)
     }
 }
 
@@ -937,6 +989,7 @@ pub(crate) fn register_automation_tools(registry: &mut ToolRegistry, store: &Sto
     registry.register(Arc::new(RunAutomationTool {
         store: store.clone(),
     }));
+    register_automation_debug_tools(registry, store);
 }
 
 // ===========================================================================

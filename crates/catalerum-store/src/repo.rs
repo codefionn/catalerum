@@ -8550,6 +8550,27 @@ impl AutomationRunRepo {
         Ok(row.map(|(id,)| AutomationRunId::from_uuid(id)))
     }
 
+    /// The newest run (any status) spawned by `job_id`, if one has started yet.
+    /// How a caller that just enqueued a `run_automation` job (the `run_automation`
+    /// tool's `wait_secs`) follows that exact run to its outcome.
+    pub async fn latest_run_by_job(
+        &self,
+        workspace_id: WorkspaceId,
+        job_id: Uuid,
+    ) -> Result<Option<AutomationRun>> {
+        let row: Option<AutomationRunRow> = sqlx::query_as(assert_sql_safe!(
+            "SELECT {RUN_COLS} FROM automation_runs
+             WHERE workspace_id = $1 AND job_id = $2
+             ORDER BY started_at DESC, id DESC LIMIT 1"
+        ))
+        .bind(workspace_id.into_uuid())
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map)?;
+        row.map(AutomationRun::try_from).transpose()
+    }
+
     /// Finalize a run with a terminal `status` (and optional failure `error`),
     /// stamping `finished_at`. [`StoreError::NotFound`] if absent.
     pub async fn finish_run(
