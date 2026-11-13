@@ -24,7 +24,7 @@ use catalerum_core::WorkspaceId;
 use catalerum_store::DEFAULT_OBJECT_LIMIT;
 
 use crate::error::{ApiError, ApiResult};
-use crate::routes::storage::{resolve_store, validate_object_key};
+use crate::object_service::{resolve_store, validate_object_key};
 use crate::state::{AppState, StorageHandle};
 
 /// The largest total (uncompressed) payload a **directory** link will archive

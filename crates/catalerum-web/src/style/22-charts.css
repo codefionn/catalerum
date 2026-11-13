@@ -1,0 +1,170 @@
+/* ── Charts (charts.rs) ──────────────────────────────────────────────────────
+   SVG data-viz primitives. Colours resolve to the --chart-N ramp / semantic
+   tokens so every chart re-themes automatically. `.chart-host` is the reactive
+   wrapper the emerged renderer emits; the figure/svg classes are shared by any
+   standalone use. */
+.chart-host { width: 100%; }
+.chart { margin: 0; display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.chart-title { font-size: .82rem; font-weight: 700; color: var(--fg); }
+.chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-svg text { font-family: inherit; }
+.chart-empty {
+  padding: 1rem; text-align: center; font-size: .8rem; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 8px; background: var(--panel-2);
+}
+/* Categorical marks. */
+.chart-slice { stroke: var(--panel); stroke-width: 1.5; transition: opacity .15s ease; }
+.chart-slice:hover { opacity: .82; }
+.chart-bar { transition: opacity .15s ease; }
+.chart-bar:hover { opacity: .82; }
+.chart-cell { stroke: var(--panel); stroke-width: .5; transition: opacity .15s ease; }
+.chart-cell:hover { opacity: .78; }
+.chart-cell-label { fill: var(--fg); font-size: 9px; pointer-events: none; }
+/* Invisible per-point hover targets (line / area / radar). */
+.chart-hit { fill: transparent; pointer-events: all; }
+/* Hover tooltips. */
+.chart-tooltip { pointer-events: none; }
+.chart-tooltip-bg {
+  fill: var(--panel-2); stroke: var(--border); stroke-width: 1; fill-opacity: .97;
+}
+.chart-tooltip-text { fill: var(--fg); font-size: 11px; font-weight: 600; }
+/* Axes / grid / labels. */
+.chart-axis { stroke: var(--border); stroke-width: 1; }
+.chart-grid { stroke: var(--border); stroke-width: 1; opacity: .55; }
+.chart-axis-label { fill: var(--muted); font-size: 11px; }
+/* Line / area / spark. */
+.chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { stroke: none; fill-opacity: .18; }
+.chart-spark { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { stroke: var(--panel); stroke-width: 1; }
+/* Radar. */
+.chart-radar-area { fill-opacity: .18; }
+.chart-radar-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+/* Gauge. */
+.chart-gauge-track { stroke: var(--border); }
+.chart-gauge-value { transition: stroke-dashoffset .25s ease; }
+.chart-gauge-text { fill: var(--fg); font-weight: 700; font-size: 26px; }
+.chart-gauge-label { fill: var(--muted); font-size: 11px; }
+/* Legend. */
+.chart-legend { display: flex; flex-wrap: wrap; gap: .25rem .8rem; margin-top: .1rem; }
+.chart-legend-item { display: inline-flex; align-items: center; gap: .32rem; font-size: .76rem; color: var(--muted); }
+.chart-legend-swatch { width: .7rem; height: .7rem; border-radius: 2px; flex: none; }
+.chart-legend-label { white-space: nowrap; }
+
+/* Inputs. */
+.eu-field { display: flex; flex-direction: column; gap: .25rem; }
+.eu-label { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.eu-input {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: .4rem .55rem; font: inherit; font-size: .88rem;
+}
+.eu-input:focus { outline: none; border-color: var(--accent); }
+.eu-textarea { min-height: 4.5rem; resize: vertical; }
+.eu-select { cursor: pointer; }
+.eu-checkbox { display: flex; align-items: center; gap: .45rem; cursor: pointer; font-size: .88rem; }
+.eu-checkbox input { accent-color: var(--accent-2); cursor: pointer; }
+.eu-err { font-size: .75rem; color: var(--err-fg); min-height: .9rem; }
+
+/* Radio group. */
+.eu-radio-group { display: flex; flex-direction: column; gap: .3rem; }
+.eu-radio { display: flex; align-items: center; gap: .45rem; cursor: pointer; font-size: .88rem; }
+.eu-radio input { accent-color: var(--accent-2); cursor: pointer; }
+
+/* Range slider. */
+.eu-range-wrap { display: flex; align-items: center; gap: .6rem; }
+.eu-range { flex: 1 1 auto; accent-color: var(--accent-2); cursor: pointer; }
+.eu-range-value {
+  flex: 0 0 auto; min-width: 2.2rem; text-align: right;
+  font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+
+/* Buttons. */
+.eu-btn {
+  background: var(--accent-2); color: var(--on-accent); border: 1px solid var(--accent-2);
+  border-radius: 7px; padding: .4rem .8rem; font: inherit; font-size: .85rem;
+  font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.eu-btn:hover:not(:disabled) { background: var(--accent); }
+.eu-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Timers (countdown / stopwatch). */
+.eu-timer {
+  display: inline-flex; align-items: center; gap: .7rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px;
+  padding: .45rem .7rem;
+}
+.eu-timer-label { font-size: .85rem; color: var(--muted); }
+.eu-timer-display {
+  font-size: 1.25rem; font-weight: 700; color: var(--fg);
+  font-variant-numeric: tabular-nums; letter-spacing: .03em;
+}
+.eu-timer-done .eu-timer-display { color: var(--accent-2); }
+.eu-timer-controls { display: flex; gap: .35rem; }
+.eu-timer-btn { padding: .25rem .6rem; font-size: .78rem; }
+
+/* Dialogs (overlay shown when opened). */
+.eu-dialog-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, .5); align-items: center; justify-content: center; padding: 1rem;
+}
+.eu-dialog-backdrop.eu-open { display: flex; }
+.eu-dialog {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  max-width: 32rem; width: 100%; max-height: 85vh; overflow: auto;
+  display: flex; flex-direction: column;
+}
+.eu-dialog-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem .7rem; border-bottom: 1px solid var(--border); font-weight: 700;
+}
+.eu-dialog-x {
+  background: none; border: none; color: var(--muted); font-size: 1.2rem;
+  line-height: 1; cursor: pointer; padding: 0 .25rem;
+}
+.eu-dialog-x:hover { color: var(--fg); }
+.eu-dialog-body { padding: .7rem; display: flex; flex-direction: column; gap: .6rem; }
+
+/* Inline notice for not-yet-wired (server-side) handlers. */
+.eu-notice {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  margin: 0 .7rem .2rem; padding: .4rem .6rem; font-size: .8rem;
+  background: #1c2c4a; color: #cfe0ff; border: 1px solid #2f4a7a; border-radius: 7px;
+}
+.eu-notice-x {
+  background: none; border: none; color: #cfe0ff; font-size: 1.1rem;
+  line-height: 1; cursor: pointer; padding: 0 .25rem;
+}
+
+/* Apps panel — the standalone emerged-UI browser (sidebar + stage). The
+   sidebar is a narrow shared `.pane-list` that scrolls as one column (no
+   header/body split — its rows are nav links, not a managed list). */
+.apps-panel { height: 100%; }
+.apps-sidebar { width: 220px; gap: .3rem; padding: .6rem; overflow-y: auto; }
+.apps-sidebar-head {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); padding: .2rem .35rem;
+}
+.apps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; }
+.apps-row { display: flex; align-items: center; gap: .1rem; }
+.apps-item {
+  flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: none;
+  cursor: pointer; padding: .4rem .55rem; border-radius: 7px; color: var(--fg);
+  font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.apps-item:hover { background: var(--panel-2); }
+.apps-item-active { background: var(--accent); color: var(--on-accent); }
+/* Per-row pin toggle feeding the nav quick menu: revealed on row hover, always
+   visible once pinned (touch viewports show it unconditionally — no hover). */
+.apps-pin {
+  flex: 0 0 auto; background: none; border: none; cursor: pointer;
+  color: var(--muted); padding: .3rem .35rem; border-radius: 6px;
+  line-height: 1; visibility: hidden;
+}
+.apps-row:hover .apps-pin, .apps-pin:focus-visible, .apps-pin-on { visibility: visible; }
+.apps-pin:hover { background: var(--panel-2); color: var(--fg); }
+.apps-pin-on { color: var(--accent); }
+.apps-error { font-size: .8rem; color: var(--err-fg); padding: .2rem .35rem; }
+.apps-empty-list { font-size: .8rem; color: var(--muted); padding: .4rem .35rem; }
+.apps-stage { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: .8rem; }
+.apps-placeholder { color: var(--muted); font-size: .85rem; padding: 1rem; }
+

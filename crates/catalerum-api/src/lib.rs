@@ -110,6 +110,7 @@ mod mcp_providers;
 mod mcp_push_bridge;
 mod model_validation;
 mod node_index;
+mod object_service;
 mod personalization_cache;
 mod pod_forward;
 mod preview_client;

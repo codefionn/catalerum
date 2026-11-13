@@ -11,7 +11,7 @@
 //! (`websocket`, `http`).
 
 use futures::FutureExt;
-use gloo_net::http::Request;
+use gloo_net::http::{Method, RequestBuilder, Response};
 
 use crate::api::{
     ApplyWeeklyPlan, DuplicateWeeklyPlan, PlanEventLink, WeekOutcome, WeeklyPlan,
@@ -118,29 +118,130 @@ fn status_error(status: u16, body: &str, token: Option<&str>) -> RestError {
     }
 }
 
+/// Map a `gloo_net` failure (building, sending, or reading a body) to
+/// [`RestError::Transport`].
+fn transport(e: gloo_net::Error) -> RestError {
+    RestError::Transport(e.to_string())
+}
+
+/// Serialize a request body to JSON. A failure is reported as
+/// [`RestError::Decode`], as it always has been, and no request is sent.
+fn to_json<B: serde::Serialize>(body: &B) -> Result<String, RestError> {
+    serde_json::to_string(body).map_err(|e| RestError::Decode(e.to_string()))
+}
+
+/// Decode a 2xx response body into `T`.
+fn decode<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, RestError> {
+    serde_json::from_str::<T>(text).map_err(|e| RestError::Decode(e.to_string()))
+}
+
+/// What a request carries.
+enum Payload<'a> {
+    /// No body and no `Content-Type` (GET, DELETE).
+    Empty,
+    /// A serialized JSON document, sent as `Content-Type: application/json`.
+    Json(String),
+    /// Raw bytes as a `Uint8Array`. `content_type` is set only when non-empty.
+    Bytes {
+        content_type: Option<&'a str>,
+        bytes: &'a [u8],
+    },
+}
+
+/// The one place a REST request is built and sent. Headers go on in a fixed
+/// order: `Content-Type` (from the payload), then the bearer credential (only
+/// for a non-empty `token`), then `extra_headers`. A build or network failure
+/// is a [`RestError::Transport`]; with `timeout_ms` set, a send that outlives
+/// the deadline fails as `Transport("request timed out")`. The status is not
+/// checked here: callers pick [`read_text_checked`] or [`check_status`].
+async fn send(
+    method: Method,
+    full_url: &str,
+    token: Option<&str>,
+    payload: Payload<'_>,
+    extra_headers: &[(&str, &str)],
+    timeout_ms: Option<u32>,
+) -> Result<Response, RestError> {
+    let mut req = RequestBuilder::new(full_url).method(method);
+    match &payload {
+        Payload::Empty => {}
+        Payload::Json(_) => req = req.header("Content-Type", "application/json"),
+        Payload::Bytes { content_type, .. } => {
+            if let Some(ct) = content_type.filter(|ct| !ct.is_empty()) {
+                req = req.header("Content-Type", ct);
+            }
+        }
+    }
+    if let Some(tok) = token.filter(|tok| !tok.is_empty()) {
+        req = req.header("Authorization", &format!("Bearer {tok}"));
+    }
+    for (name, value) in extra_headers {
+        req = req.header(name, value);
+    }
+    let req = match payload {
+        Payload::Empty => req.build(),
+        Payload::Json(text) => req.body(text),
+        Payload::Bytes { bytes, .. } => {
+            // Copy the bytes into a JS typed array: gloo-net's `body` takes any
+            // `Into<JsValue>`, and a `Uint8Array` is a valid `fetch` BodyInit.
+            let array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+            array.copy_from(bytes);
+            req.body(array)
+        }
+    }
+    .map_err(transport)?;
+    let Some(ms) = timeout_ms else {
+        return req.send().await.map_err(transport);
+    };
+    let send = req.send();
+    futures::pin_mut!(send);
+    let mut deadline = Box::pin(rest_sleep_ms(ms).fuse());
+    futures::select! {
+        response = send.fuse() => response.map_err(transport),
+        () = deadline => Err(RestError::Transport("request timed out".to_string())),
+    }
+}
+
+/// Read the whole body as text, then fail a non-2xx with [`status_error`]. A body
+/// that cannot be read is a transport error even on a 2xx.
+async fn read_text_checked(resp: Response, token: Option<&str>) -> Result<String, RestError> {
+    let status = resp.status();
+    let text = resp.text().await.map_err(transport)?;
+    if !(200..300).contains(&status) {
+        return Err(status_error(status, &text, token));
+    }
+    Ok(text)
+}
+
+/// Pass a 2xx response through with its body unread. On a non-2xx, read the body
+/// (an unreadable one is a transport error) and fail with [`status_error`].
+async fn check_status(resp: Response, token: Option<&str>) -> Result<Response, RestError> {
+    let status = resp.status();
+    if (200..300).contains(&status) {
+        return Ok(resp);
+    }
+    let body = resp.text().await.map_err(transport)?;
+    Err(status_error(status, &body, token))
+}
+
+/// Send a JSON request and return the 2xx body as text (see [`send`] and
+/// [`read_text_checked`]).
+async fn send_json(
+    method: Method,
+    full_url: &str,
+    token: Option<&str>,
+    payload: String,
+) -> Result<String, RestError> {
+    let resp = send(method, full_url, token, Payload::Json(payload), &[], None).await?;
+    read_text_checked(resp, token).await
+}
+
 /// Issue a GET, attaching `token` as a bearer credential, and return the raw
 /// response body of a 2xx as text — for callers that hand the server's JSON on
 /// verbatim (the chat debug export) instead of decoding it into a contract type.
 async fn get_body(full_url: &str, token: Option<&str>) -> Result<String, RestError> {
-    let mut req = Request::get(full_url);
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &body, token));
-    }
-    Ok(body)
+    let resp = send(Method::GET, full_url, token, Payload::Empty, &[], None).await?;
+    read_text_checked(resp, token).await
 }
 
 /// Issue a GET, attaching `token` as a bearer credential, and decode the JSON
@@ -149,8 +250,7 @@ async fn get_json<T: serde::de::DeserializeOwned>(
     full_url: &str,
     token: Option<&str>,
 ) -> Result<T, RestError> {
-    let body = get_body(full_url, token).await?;
-    serde_json::from_str::<T>(&body).map_err(|e| RestError::Decode(e.to_string()))
+    decode(&get_body(full_url, token).await?)
 }
 
 /// Issue a POST with a JSON `body` (or an empty body when `None`), attaching
@@ -160,59 +260,22 @@ async fn post_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
     token: Option<&str>,
     body: Option<&B>,
 ) -> Result<T, RestError> {
-    let mut req = Request::post(full_url).header("Content-Type", "application/json");
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
     // Always send a JSON body so `Content-Type` matches; `null` for no payload.
     let payload = match body {
-        Some(b) => serde_json::to_string(b).map_err(|e| RestError::Decode(e.to_string()))?,
+        Some(b) => to_json(b)?,
         None => "null".to_string(),
     };
-    let req = req
-        .body(payload)
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &text, token));
-    }
-    serde_json::from_str::<T>(&text).map_err(|e| RestError::Decode(e.to_string()))
+    decode(&send_json(Method::POST, full_url, token, payload).await?)
 }
 
+/// Issue a POST with a JSON `body` and ignore the 2xx response body. The body is
+/// still read in full, so an unreadable one fails as a transport error.
 async fn post_json_empty<B: serde::Serialize>(
     full_url: &str,
     token: Option<&str>,
     body: &B,
 ) -> Result<(), RestError> {
-    let mut req = Request::post(full_url).header("Content-Type", "application/json");
-    if let Some(tok) = token.filter(|tok| !tok.is_empty()) {
-        req = req.header("Authorization", &format!("Bearer {tok}"));
-    }
-    let payload = serde_json::to_string(body).map_err(|e| RestError::Decode(e.to_string()))?;
-    let response = req
-        .body(payload)
-        .map_err(|e| RestError::Transport(e.to_string()))?
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &text, token));
-    }
+    send_json(Method::POST, full_url, token, to_json(body)?).await?;
     Ok(())
 }
 
@@ -223,29 +286,7 @@ async fn put_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
     token: Option<&str>,
     body: &B,
 ) -> Result<T, RestError> {
-    let mut req = Request::put(full_url).header("Content-Type", "application/json");
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let payload = serde_json::to_string(body).map_err(|e| RestError::Decode(e.to_string()))?;
-    let req = req
-        .body(payload)
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &text, token));
-    }
-    serde_json::from_str::<T>(&text).map_err(|e| RestError::Decode(e.to_string()))
+    decode(&send_json(Method::PUT, full_url, token, to_json(body)?).await?)
 }
 
 /// Issue a PATCH with a JSON `body`, attaching `token` as a bearer credential,
@@ -255,29 +296,7 @@ async fn patch_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
     token: Option<&str>,
     body: &B,
 ) -> Result<T, RestError> {
-    let mut req = Request::patch(full_url).header("Content-Type", "application/json");
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let payload = serde_json::to_string(body).map_err(|e| RestError::Decode(e.to_string()))?;
-    let req = req
-        .body(payload)
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &text, token));
-    }
-    serde_json::from_str::<T>(&text).map_err(|e| RestError::Decode(e.to_string()))
+    decode(&send_json(Method::PATCH, full_url, token, to_json(body)?).await?)
 }
 
 /// Issue a PUT with a raw **binary** body (a `Uint8Array`), attaching `token` as
@@ -291,43 +310,19 @@ async fn put_bytes(
     content_type: Option<&str>,
     bytes: &[u8],
 ) -> Result<(), RestError> {
-    // Copy the bytes into a JS typed array — gloo-net's `body` takes any
-    // `Into<JsValue>`, and a `Uint8Array` is a valid `fetch` BodyInit.
-    let array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
-    array.copy_from(bytes);
-
-    let mut req = Request::put(full_url);
-    if let Some(ct) = content_type {
-        if !ct.is_empty() {
-            req = req.header("Content-Type", ct);
-        }
-    }
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let req = req
-        .body(array)
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    if (200..300).contains(&status) {
-        return Ok(());
-    }
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    Err(status_error(status, &body, token))
+    let payload = Payload::Bytes {
+        content_type,
+        bytes,
+    };
+    let resp = send(Method::PUT, full_url, token, payload, &[], None).await?;
+    check_status(resp, token).await?;
+    Ok(())
 }
 
 /// Issue a POST with a raw **binary** body (a `Uint8Array`) and decode the JSON
 /// response into `T`. The binary sibling of [`post_json`] — used where the request
 /// body is media bytes, not JSON (the mic recorder's audio blob → a transcript).
+/// The send is abandoned after 20 s.
 async fn post_bytes_json<T: serde::de::DeserializeOwned>(
     full_url: &str,
     token: Option<&str>,
@@ -335,42 +330,20 @@ async fn post_bytes_json<T: serde::de::DeserializeOwned>(
     request_id: Option<&str>,
     bytes: &[u8],
 ) -> Result<T, RestError> {
-    let array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
-    array.copy_from(bytes);
-
-    let mut req = Request::post(full_url);
-    if let Some(ct) = content_type {
-        if !ct.is_empty() {
-            req = req.header("Content-Type", ct);
-        }
-    }
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    if let Some(id) = request_id {
-        req = req.header("X-Catalerum-Transcription-Id", id);
-    }
-    let req = req
-        .body(array)
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let send = req.send();
-    futures::pin_mut!(send);
-    let mut deadline = Box::pin(rest_sleep_ms(20_000).fuse());
-    let resp = futures::select! {
-        response = send.fuse() => response.map_err(|e| RestError::Transport(e.to_string()))?,
-        () = deadline => return Err(RestError::Transport("request timed out".to_string())),
+    let payload = Payload::Bytes {
+        content_type,
+        bytes,
     };
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    if !(200..300).contains(&status) {
-        return Err(status_error(status, &text, token));
-    }
-    serde_json::from_str::<T>(&text).map_err(|e| RestError::Decode(e.to_string()))
+    let id_header;
+    let extra: &[(&str, &str)] = match request_id {
+        Some(id) => {
+            id_header = [("X-Catalerum-Transcription-Id", id)];
+            &id_header
+        }
+        None => &[],
+    };
+    let resp = send(Method::POST, full_url, token, payload, extra, Some(20_000)).await?;
+    decode(&read_text_checked(resp, token).await?)
 }
 
 async fn rest_sleep_ms(ms: u32) {
@@ -386,25 +359,9 @@ async fn rest_sleep_ms(ms: u32) {
 /// (including the `204 No Content` the API returns) as success; on a non-2xx it
 /// surfaces the server's `{"error": …}` message.
 async fn delete_resource(full_url: &str, token: Option<&str>) -> Result<(), RestError> {
-    let mut req = Request::delete(full_url);
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    let status = resp.status();
-    if (200..300).contains(&status) {
-        return Ok(());
-    }
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
-    Err(status_error(status, &body, token))
+    let resp = send(Method::DELETE, full_url, token, Payload::Empty, &[], None).await?;
+    check_status(resp, token).await?;
+    Ok(())
 }
 
 /// `GET /events` — all of this workspace's events (newest start ordering is the
@@ -2134,24 +2091,15 @@ pub async fn fetch_object_bytes(
 ) -> Result<Vec<u8>, RestError> {
     let path = format!("{STORAGE_OBJECTS_PATH}/{}", encode_key_path(key));
     let full = append_store(&url(&path), store);
-    let mut req = Request::get(&full);
-    if let Some(tok) = token {
-        if !tok.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {tok}"));
-        }
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))?;
+    let resp = send(Method::GET, &full, token, Payload::Empty, &[], None).await?;
     let status = resp.status();
     if !(200..300).contains(&status) {
+        // Unlike `check_status`, an unreadable error body is not a transport
+        // error here: it degrades to an empty message.
         let body = resp.text().await.unwrap_or_default();
         return Err(status_error(status, &body, token));
     }
-    resp.binary()
-        .await
-        .map_err(|e| RestError::Transport(e.to_string()))
+    resp.binary().await.map_err(transport)
 }
 
 /// Append a `?store=` (or `&store=`) query parameter when `store` is a non-empty

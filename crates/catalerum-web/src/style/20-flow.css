@@ -1,0 +1,251 @@
+/* --- Flow editor (SOUL §11 Phase C — visual node-graph canvas) --- */
+.flow {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+  --flow-trigger: #4fd1a1; --flow-action: #6ea8fe; --flow-code: #b692f6; --flow-condition: #f0c46c;
+  --flow-agent: #22d3ee; --flow-classify: #f472b6; --flow-loop: #fb923c;
+}
+.flow-palette {
+  display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
+  padding: .55rem .7rem; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+}
+.flow-palette-label {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin-right: .15rem;
+}
+.flow-palette-sep { width: 1px; height: 1.3rem; background: var(--border); margin: 0 .25rem; }
+.flow-pal-btn {
+  display: inline-flex; align-items: center; gap: .42rem;
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .35rem .7rem .35rem .58rem; font: inherit; font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: border-color .12s, transform .08s, background .12s;
+}
+.flow-pal-btn::before {
+  content: ""; width: .6rem; height: .6rem; border-radius: 50%;
+  background: var(--dot, var(--accent)); box-shadow: 0 0 7px var(--dot, var(--accent));
+}
+.flow-pal-btn:hover { transform: translateY(-1px); background: var(--panel); border-color: var(--dot, var(--accent)); }
+.flow-pal-trigger { --dot: var(--flow-trigger); }
+.flow-pal-action { --dot: var(--flow-action); }
+.flow-pal-code { --dot: var(--flow-code); }
+.flow-pal-condition { --dot: var(--flow-condition); }
+.flow-pal-agent { --dot: var(--flow-agent); }
+.flow-pal-classifier { --dot: var(--flow-classify); }
+.flow-pal-loop { --dot: var(--flow-loop); }
+.flow-invalid {
+  margin-left: auto; color: #ffb4a2; font-size: .76rem; font-weight: 600;
+  background: rgba(90,34,48,.45); border: 1px solid #5a2230; border-radius: 999px; padding: .18rem .6rem;
+}
+/* Node-type semantic search (SOUL §11): describe a need, get ranked node types. */
+.flow-node-search {
+  position: relative;
+  padding: .5rem .7rem; border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+.flow-node-search-bar { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.flow-node-search-input {
+  flex: 1; min-width: 14rem;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .4rem .6rem; font: inherit; font-size: .82rem;
+}
+.flow-node-search-input:focus { outline: none; border-color: var(--accent); }
+.flow-node-search-status { color: var(--muted); font-size: .76rem; }
+.flow-node-search-err {
+  margin-top: .4rem; color: #ffb4a2; font-size: .76rem;
+  background: rgba(90,34,48,.4); border: 1px solid #5a2230; border-radius: 6px; padding: .3rem .55rem;
+}
+.flow-node-results {
+  margin-top: .5rem; display: flex; flex-direction: column; gap: .3rem;
+  max-height: 15rem; overflow-y: auto;
+}
+.flow-node-result {
+  display: flex; align-items: flex-start; gap: .55rem; text-align: left;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .45rem .6rem; font: inherit; cursor: pointer;
+  transition: border-color .12s, background .12s, transform .08s;
+}
+.flow-node-result:hover { border-color: var(--accent); background: var(--panel-2); transform: translateY(-1px); }
+.flow-node-result-badge {
+  flex: none; margin-top: .05rem; font-size: .66rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: #0b0f14; border-radius: 5px; padding: .12rem .4rem;
+}
+.flow-rb-trigger { background: var(--flow-trigger); }
+.flow-rb-action { background: var(--flow-action); }
+.flow-rb-code { background: var(--flow-code); }
+.flow-rb-condition { background: var(--flow-condition); }
+.flow-rb-for_each, .flow-rb-loop_end { background: var(--flow-loop); }
+.flow-node-result-main { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.flow-node-result-title { font-size: .82rem; font-weight: 600; }
+.flow-node-result-summary { font-size: .74rem; color: var(--muted); }
+.flow-main { display: flex; flex: 1; min-height: 0; }
+.flow-canvas-wrap { flex: 1; min-width: 0; position: relative; overflow: hidden; }
+.flow-canvas {
+  width: 100%; height: 100%; display: block; background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 50% -10%, rgba(110,168,254,.07), transparent 55%),
+    radial-gradient(var(--border) 1.1px, transparent 1.2px);
+  background-size: auto, 24px 24px; touch-action: none; cursor: grab; user-select: none;
+}
+.flow-canvas:active { cursor: grabbing; }
+/* Focusable (tabindex) so it can receive Delete/Backspace; suppress the ring —
+   focus here is implicit from clicking, and a box around the whole canvas is noise. */
+.flow-canvas:focus { outline: none; }
+.flow-canvas:focus-visible { outline: none; }
+.flow-zoom {
+  position: absolute; bottom: .6rem; right: .6rem; display: flex; gap: .25rem;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .2rem;
+}
+.flow-zoom-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+  min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; font: inherit; font-size: .9rem; cursor: pointer;
+}
+.flow-zoom-btn:hover { border-color: var(--accent); }
+.flow-zoom-pct { min-width: 3rem; font-size: .74rem; font-variant-numeric: tabular-nums; }
+.flow-empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: .5rem; padding: 1.5rem;
+  pointer-events: none; text-align: center;
+}
+/* Wiring-gesture feedback (e.g. an edge into a non-collect trigger): a small
+   dismissible banner floated over the canvas top edge. */
+.flow-wire-hint {
+  position: absolute; top: .6rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: .5rem; max-width: min(34rem, 90%);
+  background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-fg);
+  border-radius: 8px; padding: .4rem .65rem; font-size: .8rem; line-height: 1.35; z-index: 3;
+}
+.flow-wire-hint button {
+  background: none; border: none; color: inherit; font: inherit; cursor: pointer;
+  padding: 0 .1rem; font-size: .9rem;
+}
+.flow-empty-title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--fg); }
+.flow-empty-sub { margin: 0; max-width: 30rem; color: var(--muted); font-size: .88rem; line-height: 1.5; }
+.flow-edge { fill: none; stroke: var(--accent-2); stroke-width: 2.2; cursor: pointer; transition: stroke .1s, stroke-width .1s; }
+.flow-edge:hover { stroke: var(--accent); stroke-width: 3; }
+.flow-edge-pending {
+  stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: 6 5; pointer-events: none;
+  animation: flow-dash .5s linear infinite;
+}
+@keyframes flow-dash { to { stroke-dashoffset: -22; } }
+.flow-arrow { fill: var(--accent-2); }
+.flow-node { cursor: grab; }
+.flow-node:hover .flow-node-box { filter: brightness(1.09) drop-shadow(0 3px 7px rgba(0,0,0,.5)); }
+.flow-node-box {
+  fill: var(--panel-2); stroke: var(--border); stroke-width: 1.5;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,.45));
+}
+.flow-node-accent { fill: var(--accent); }
+.flow-node-icon { font-size: 15px; pointer-events: none; }
+.flow-node-title {
+  fill: var(--fg); font-size: 13px; font-weight: 700; pointer-events: none;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.flow-node-id {
+  fill: var(--muted); font-size: 10.5px; text-anchor: end; pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.flow-node-sub {
+  fill: var(--muted); font-size: 11px; pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* per-kind colour identity (box border + accent bar + title) */
+.flow-node-trigger .flow-node-box { stroke: var(--flow-trigger); }
+.flow-node-trigger .flow-node-accent, .flow-node-trigger .flow-node-title { fill: var(--flow-trigger); }
+.flow-node-action .flow-node-box { stroke: var(--flow-action); }
+.flow-node-action .flow-node-accent, .flow-node-action .flow-node-title { fill: var(--flow-action); }
+.flow-node-code .flow-node-box { stroke: var(--flow-code); }
+.flow-node-code .flow-node-accent, .flow-node-code .flow-node-title { fill: var(--flow-code); }
+.flow-node-condition .flow-node-box { stroke: var(--flow-condition); }
+.flow-node-condition .flow-node-accent, .flow-node-condition .flow-node-title { fill: var(--flow-condition); }
+.flow-node-loop .flow-node-box { stroke: var(--flow-loop); }
+.flow-node-loop .flow-node-accent, .flow-node-loop .flow-node-title { fill: var(--flow-loop); }
+.flow-node-agent .flow-node-box { stroke: var(--flow-agent); }
+.flow-node-agent .flow-node-accent, .flow-node-agent .flow-node-title { fill: var(--flow-agent); }
+.flow-node-classify .flow-node-box { stroke: var(--flow-classify); }
+.flow-node-classify .flow-node-accent, .flow-node-classify .flow-node-title { fill: var(--flow-classify); }
+.flow-node-selected .flow-node-box {
+  stroke: var(--accent); stroke-width: 2.6;
+  filter: drop-shadow(0 0 9px rgba(110,168,254,.5));
+}
+.flow-node-warn .flow-node-box { stroke: var(--flow-condition); stroke-dasharray: 5 4; }
+.flow-node-warn-mark { fill: var(--flow-condition); font-size: 13px; pointer-events: none; }
+.flow-port { fill: var(--panel); stroke: var(--accent); stroke-width: 2; cursor: crosshair; transition: fill .1s; }
+.flow-port:hover { fill: var(--accent); }
+.flow-port-in { stroke: var(--muted); }
+.flow-port-in:hover { fill: var(--fg); stroke: var(--fg); }
+.flow-port-true { stroke: var(--flow-trigger); }
+.flow-port-true:hover { fill: var(--flow-trigger); }
+.flow-port-false { stroke: #ff8b8b; }
+.flow-port-false:hover { fill: #ff8b8b; }
+.flow-port-label {
+  fill: var(--muted); font-size: 9.5px; font-weight: 700; text-anchor: start; pointer-events: none;
+  text-transform: uppercase; letter-spacing: .3px; font-family: ui-sans-serif, system-ui, sans-serif;
+  /* Canvas-coloured halo: port labels sit outside the node where edges run, so
+     without it a passing edge strikes the text through. */
+  paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round;
+}
+.flow-plabel-true { fill: var(--flow-trigger); }
+.flow-plabel-false { fill: #ff8b8b; }
+/* The collect trigger's commit gate (SOUL §11/§28): dashed + amber so "advance
+   the cursor when this write succeeds" never reads as a second data edge. */
+.flow-edge-commit { stroke: var(--warn-fg); stroke-dasharray: 7 5; }
+.flow-edge-commit:hover { stroke: var(--warn-fg); stroke-width: 3; }
+.flow-arrow-commit { fill: var(--warn-fg); }
+.flow-port-commit { stroke: var(--warn-fg); }
+.flow-port-commit:hover { fill: var(--warn-fg); }
+.flow-plabel-commit { fill: var(--warn-fg); }
+.flow-config {
+  width: 19rem; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--panel);
+  overflow-y: auto;
+}
+.flow-config-empty { color: var(--muted); font-size: .85rem; padding: 1rem; }
+.flow-config-body { display: flex; flex-direction: column; gap: .45rem; padding: .8rem .85rem; }
+.flow-config-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .2rem; }
+.flow-cfg-head-btns { display: flex; gap: .3rem; flex: none; }
+.flow-config-title {
+  font-size: .82rem; font-weight: 700; color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere;
+}
+.flow-cfg-label {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted); margin-top: .3rem;
+}
+.flow-cfg-input, .flow-cfg-area {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: .4rem .55rem; font: inherit; font-size: .82rem; width: 100%;
+}
+.flow-cfg-area {
+  min-height: 4rem; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; line-height: 1.5;
+}
+.flow-cfg-area-tall { min-height: 8rem; }
+.flow-cfg-input:focus, .flow-cfg-area:focus { outline: none; border-color: var(--accent); }
+.flow-cfg-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: .3rem .6rem; font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
+}
+.flow-cfg-del { color: var(--err-fg); border-color: #5a2730; }
+.flow-cfg-del:hover { background: #5a2730; color: var(--on-accent); }
+/* The bottom-sheet dismiss button only exists on mobile (see the media block); on
+   desktop the config rail is always docked, so it has nothing to close. */
+.flow-cfg-close { display: none; }
+.flow-cfg-err { color: var(--err-fg); font-size: .78rem; }
+.flow-cfg-warn { color: var(--warn-fg); font-size: .76rem; }
+.flow-cfg-hint { color: var(--muted); font-size: .76rem; }
+.flow-cfg-field { display: flex; flex-direction: column; gap: .15rem; }
+.flow-tools {
+  display: flex; flex-direction: column; gap: .5rem;
+  max-height: 16rem; overflow-y: auto; padding: .5rem .55rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+}
+.flow-tool-group { display: flex; flex-direction: column; gap: .15rem; }
+.flow-tool-grp {
+  font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--flow-agent);
+}
+.flow-tool {
+  display: flex; align-items: center; gap: .4rem; font-size: .8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); cursor: pointer;
+}
+.flow-tool input { accent-color: var(--flow-agent); cursor: pointer; }
+

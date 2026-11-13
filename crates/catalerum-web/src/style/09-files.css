@@ -1,0 +1,158 @@
+/* --- Files panel (M3 object-storage browser) --- */
+.files-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.files-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.files-header-titles { display: flex; flex-direction: column; gap: .15rem; }
+.files-title { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.files-subtitle { color: var(--muted); font-size: .82rem; }
+.files-actions { display: flex; gap: .5rem; flex-shrink: 0; align-items: center; }
+.files-filter { display: flex; gap: .5rem; }
+.files-upload { cursor: pointer; }
+.files-upload-input { display: none; }
+.files-input {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .45rem .6rem; font: inherit; font-size: .85rem; min-width: 16rem;
+}
+.files-input:focus { outline: none; border-color: var(--accent); }
+.files-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .4rem .8rem; font: inherit; font-size: .82rem;
+  font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block;
+}
+.files-btn:hover:not(:disabled) { border-color: var(--accent); }
+.files-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.files-btn-primary { background: var(--accent-2); color: var(--on-accent); border-color: var(--accent-2); }
+.files-btn-primary:hover:not(:disabled) { background: var(--accent); }
+.files-btn-link { color: var(--accent); }
+.files-btn-danger { background: var(--err); color: var(--err-fg); border-color: var(--err-border); }
+.files-btn-danger:hover:not(:disabled) { border-color: var(--err-fg); }
+.files-banner { margin: .7rem 1rem 0; padding: .5rem .7rem; font-size: .85rem; border-radius: 8px; }
+.files-error { color: var(--err-fg); }
+.files-banner.files-error { background: var(--err); border: 1px solid var(--err-border); color: var(--err-fg); }
+.files-banner.files-notice {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--fg);
+  display: flex; align-items: center; gap: .6rem; justify-content: space-between;
+}
+.files-store-select { max-width: 16ch; }
+.files-manager { margin: .7rem 1rem 0; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2, rgba(255,255,255,.02)); }
+.files-store-list { list-style: none; margin: 0 0 .8rem; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.files-store-row { display: flex; gap: .6rem; align-items: center; font-size: .85rem; }
+.files-store-name { font-weight: 600; }
+.files-store-row .files-type { color: var(--muted); }
+.files-store-row .files-btn-danger { margin-left: auto; }
+.files-store-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.files-store-check { display: inline-flex; gap: .35rem; align-items: center; color: var(--muted); font-size: .82rem; }
+.files-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
+.files-status { color: var(--muted); margin: 1.2rem auto; text-align: center; max-width: 48ch; }
+.files-type { color: var(--muted); font-size: .82rem; word-break: break-word; }
+/* Filesystem tree — the Files panel browses a store's backend as an expandable
+   directory tree (indent is an inline padding-left from each row's depth). */
+.files-tree { display: flex; flex-direction: column; }
+.files-tree-row {
+  display: flex; align-items: center; gap: .5rem; padding: .3rem .6rem;
+  border-bottom: 1px solid var(--border); font-size: .88rem; min-width: 0;
+}
+.files-tree-row:hover { background: var(--panel); }
+.files-tree-dir { cursor: pointer; user-select: none; font-weight: 600; }
+.files-tree-caret { width: .9rem; flex: none; color: var(--muted); text-align: center; }
+.files-tree-icon { flex: none; }
+.files-tree-name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+.files-tree-type {
+  flex: none; color: var(--muted); font-size: .8rem; max-width: 14ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.files-tree-size {
+  flex: none; color: var(--muted); font-variant-numeric: tabular-nums;
+  white-space: nowrap; min-width: 5.5ch; text-align: right;
+}
+.files-tree-modified {
+  flex: none; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.files-tree-cell { flex: none; text-align: center; min-width: 1.5rem; }
+.files-tree-actions { flex: none; display: flex; gap: .4rem; white-space: nowrap; }
+.files-tree-truncated { text-align: left; margin: .6rem; font-size: .8rem; }
+/* File/dir labels — chips shown inline on a tree row, each with a remove ("×"),
+   plus an inline add ("+"). The strip stops click propagation so tagging a
+   directory row never toggles its expand. */
+.files-labels { flex: 0 1 auto; display: inline-flex; align-items: center; gap: .3rem; flex-wrap: wrap; min-width: 0; }
+.files-label-chip {
+  display: inline-flex; align-items: center; gap: .15rem; padding: .02rem .45rem;
+  border-radius: 999px; background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border); font-size: .72rem; line-height: 1.5;
+}
+.files-label-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16ch; }
+.files-label-x {
+  background: transparent; border: 0; cursor: pointer; color: var(--muted);
+  font: inherit; line-height: 1; padding: 0 .05rem;
+}
+.files-label-x:hover { color: var(--err); }
+.files-label-add {
+  background: transparent; border: 1px dashed var(--border); cursor: pointer;
+  color: var(--muted); border-radius: 999px; font-size: .72rem; line-height: 1.3;
+  padding: .02rem .4rem;
+}
+.files-label-add:hover { background: var(--panel-2); color: var(--fg); }
+/* Content-search results list (object excerpts). */
+.files-hits { list-style: none; margin: 0; padding: .4rem; display: flex; flex-direction: column; gap: .4rem; }
+.files-hit {
+  display: flex; flex-direction: column; gap: .3rem; padding: .55rem .65rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+}
+.files-hit-head { display: flex; align-items: baseline; gap: .5rem; justify-content: space-between; }
+.files-hit-name { font-weight: 600; font-size: .9rem; word-break: break-word; }
+.files-hit-excerpt {
+  font-size: .8rem; color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.files-hit-actions { display: flex; gap: .5rem; }
+.files-modified { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.files-badge { color: var(--muted); }
+.files-badge-on { color: var(--accent); font-weight: 700; }
+/* The "Indexed ✓" badge doubles as a button opening the extracted-text viewer. */
+.files-badge-btn {
+  background: transparent; border: 0; cursor: pointer; font: inherit; font-weight: 700;
+  padding: .05rem .35rem; border-radius: 6px; line-height: 1;
+}
+.files-badge-btn:hover { background: var(--panel-2); }
+
+/* --- Files: extracted-text viewer modal (§10) --- */
+.files-modal-overlay {
+  position: fixed; inset: 0; z-index: 50; background: var(--scrim);
+  display: flex; align-items: flex-start; justify-content: center; padding: 4rem 1rem;
+  overflow-y: auto;
+}
+.files-modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  width: 100%; max-width: 820px; max-height: 80vh; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.files-modal-header {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .9rem 1.1rem; border-bottom: 1px solid var(--border);
+}
+.files-modal-title {
+  margin: 0; font-size: .98rem; font-weight: 700; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.files-modal-close {
+  background: transparent; color: var(--muted); border: 0; border-radius: 6px;
+  width: 1.8rem; height: 1.8rem; font-size: 1rem; cursor: pointer; flex: none;
+}
+.files-modal-close:hover { color: var(--fg); background: var(--panel-2); }
+.files-modal-body { overflow-y: auto; padding: 1rem 1.1rem 1.2rem; min-height: 0; }
+.files-modal-summary {
+  margin: 0 0 .8rem; padding: .55rem .7rem; border-left: 3px solid var(--accent-2);
+  background: var(--panel-2); border-radius: 0 8px 8px 0; color: var(--fg);
+  font-size: .86rem; line-height: 1.45;
+}
+.files-modal-text {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem;
+  line-height: 1.5; color: var(--fg);
+}
+.files-modal-note { margin: .8rem 0 0; color: var(--muted); font-size: .78rem; font-style: italic; }
+

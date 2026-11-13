@@ -1,0 +1,82 @@
+/* --- Voice conversation overlay (SOUL §7/§12) --- */
+/* The 🎧 opener sits beside the mic and shares its chrome. */
+.chat-voice {
+  align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 42px; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 1.05rem;
+}
+.chat-voice:hover:not(:disabled) { border-color: var(--accent); }
+.chat-voice:disabled { color: var(--muted); cursor: default; }
+/* Full-screen opaque takeover, above the context menus (70). */
+.voice-overlay {
+  position: fixed; inset: 0; z-index: 80; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.2rem; padding: 1.5rem; text-align: center;
+}
+/* The sound-reactive orb: `--voice-level` (0..1, set from the live mic or
+   playback analyser) drives scale + glow; the rings ripple harder. Short
+   ease-out transitions smooth the 50–120 ms meter ticks into fluid motion. */
+.voice-orb-wrap { position: relative; width: min(42vmin, 260px); aspect-ratio: 1; cursor: pointer; }
+.voice-orb {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%,
+    color-mix(in srgb, var(--accent) 80%, var(--fg)), var(--accent));
+  transform: scale(calc(1 + var(--voice-level, 0) * .3));
+  box-shadow: 0 0 calc(1.5rem + var(--voice-level, 0) * 4rem)
+    color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: transform .15s ease-out, box-shadow .15s ease-out, filter .3s ease;
+}
+.voice-ring {
+  position: absolute; inset: -8%; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: scale(calc(1 + var(--voice-level, 0) * .5));
+  transition: transform .18s ease-out, opacity .18s ease-out;
+  pointer-events: none;
+}
+.voice-ring-b {
+  inset: -16%; opacity: .6;
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  transform: scale(calc(1 + var(--voice-level, 0) * .8));
+}
+/* Speaking swaps the dominant tone so the reply reads as "the other party". */
+.voice-speaking .voice-orb {
+  background: radial-gradient(circle at 35% 30%,
+    color-mix(in srgb, var(--accent-2) 80%, var(--fg)), var(--accent-2));
+  box-shadow: 0 0 calc(1.5rem + var(--voice-level, 0) * 4rem)
+    color-mix(in srgb, var(--accent-2) 55%, transparent);
+}
+.voice-speaking .voice-ring { border-color: color-mix(in srgb, var(--accent-2) 40%, transparent); }
+.voice-speaking .voice-ring-b { border-color: color-mix(in srgb, var(--accent-2) 25%, transparent); }
+/* Thinking: a slow breathing pulse + one spinning ring while the turn runs. */
+.voice-thinking .voice-orb, .voice-transcribing .voice-orb {
+  animation: voice-think 1.6s ease-in-out infinite;
+}
+.voice-thinking .voice-ring-a, .voice-transcribing .voice-ring-a {
+  border-top-color: var(--accent);
+  animation: voice-ring-spin 2.4s linear infinite;
+}
+@keyframes voice-think {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+@keyframes voice-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.voice-paused .voice-orb { filter: grayscale(.65); animation: none; }
+.voice-paused .voice-ring { opacity: .3; }
+.voice-status { color: var(--fg); font-size: 1.05rem; min-height: 1.4em; }
+.voice-heard { color: var(--muted); max-width: 40rem; }
+.voice-error { color: var(--err-fg); max-width: 40rem; }
+.voice-close {
+  position: fixed; top: 1rem; right: 1rem; min-width: 42px; min-height: 42px;
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; font-size: 1.05rem;
+}
+.voice-close:hover { border-color: var(--accent); }
+.voice-pause {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; padding: .45rem 1.1rem; font-size: .95rem;
+}
+.voice-pause:hover { border-color: var(--accent); }
+

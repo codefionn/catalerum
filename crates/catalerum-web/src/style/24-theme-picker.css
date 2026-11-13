@@ -1,0 +1,86 @@
+/* Theme picker (Settings → Appearance + Quick start). A grid of cards, each a
+   live mini-preview of its palette drawn from inline literals so the swatch
+   shows the theme's own colours regardless of the one currently applied. */
+.appearance-intro { margin: 0 0 .9rem; color: var(--muted); font-size: .85rem; line-height: 1.5; }
+.theme-grid {
+  display: grid; gap: .7rem;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+}
+.theme-card {
+  display: flex; flex-direction: column; gap: .6rem; text-align: left;
+  padding: .6rem; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+  font: inherit; transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.theme-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.theme-card:focus-visible { outline: none; border-color: var(--accent); }
+.theme-card-active {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px var(--accent-2), 0 8px 22px var(--scrim);
+}
+.theme-swatch {
+  display: flex; flex-direction: column; height: 4.2rem; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.theme-swatch-bar {
+  display: flex; align-items: center; justify-content: flex-end;
+  height: 1.15rem; padding: 0 .4rem; border-bottom: 1px solid var(--border); flex: none;
+}
+.theme-swatch-dot { width: .5rem; height: .5rem; border-radius: 50%; }
+.theme-swatch-body {
+  flex: 1; display: flex; flex-direction: column; gap: .3rem;
+  padding: .45rem .5rem .5rem;
+}
+.theme-swatch-line { height: .3rem; border-radius: 99px; opacity: .92; }
+.theme-swatch-line-lg { width: 72%; }
+.theme-swatch-line-sm { width: 46%; opacity: .6; }
+.theme-swatch-pill { width: 38%; height: .55rem; border-radius: 99px; margin-top: auto; }
+.theme-card-meta { display: flex; flex-direction: column; gap: .15rem; }
+.theme-card-name {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .92rem; font-weight: 700; letter-spacing: .1px;
+}
+.theme-card-check { color: var(--accent); font-size: .8rem; }
+.theme-card-blurb { color: var(--muted); font-size: .76rem; line-height: 1.35; }
+@media (prefers-reduced-motion: reduce) {
+  .theme-card { transition: none; }
+  .theme-card:hover { transform: none; }
+}
+
+/* Custom-palette editor (Settings → Appearance, revealed when "Custom" is the
+   active theme). Per-token colour inputs apply live; the JSON panels mirror the
+   palette for copy-out (export) and paste-in (import). The custom theme's tokens
+   are injected at runtime as :root[data-theme="custom"] (see theme.rs), not as a
+   static block above. */
+.custom-theme {
+  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: .8rem;
+}
+.custom-theme-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.custom-theme-title { margin: 0; font-size: .95rem; font-weight: 700; }
+.custom-theme-hint { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.custom-theme-grid {
+  display: grid; gap: .45rem .9rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+.custom-theme-field { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.custom-theme-label { color: var(--muted); font-size: .76rem; }
+.custom-theme-inputs { display: flex; align-items: center; gap: .35rem; flex: none; }
+.custom-theme-color {
+  width: 1.9rem; height: 1.9rem; padding: 0; flex: none; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+}
+.custom-theme-text {
+  width: 8.5rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem;
+}
+.custom-theme-io {
+  display: grid; gap: .9rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.custom-theme-io-col { display: flex; flex-direction: column; gap: .35rem; }
+.custom-theme-json {
+  min-height: 9rem; resize: vertical; white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; line-height: 1.45;
+}
+.custom-theme-io-actions { display: flex; gap: .5rem; }
+

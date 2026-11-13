@@ -102,9 +102,9 @@ pub use id::PendingQuestionId;
 pub use model::PendingQuestion;
 
 pub use provider::{
-    ByteStream, CalendarProvider, Channel, ChannelTarget, CommandResult, CommandSpec,
-    EmailProvider, Embedder, Executor, FetchFormat, FetchMode, FetchRequest, FetchedPage,
-    InMessage, LlmClient, NewEvent, ObjectMeta, OcrEngine, OutMessage, Previewer, PutMeta,
+    ByteStream, CalendarProvider, CommandResult, CommandSpec, EmailProvider, Embedder, Executor,
+    FetchFormat, FetchMode, FetchRequest, FetchedPage, LlmClient, NewEvent, ObjectMeta,
+    OcrEngine, Previewer, PutMeta,
     ResourceLimits, SearchHit, SearchRequest, SearchResults, Session, SessionSpec,
     SpeechSynthesizer, StorageBackend, SyncBatch, Transcriber, WebFetcher, WebSearcher,
 };

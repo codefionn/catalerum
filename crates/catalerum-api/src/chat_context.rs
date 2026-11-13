@@ -255,7 +255,7 @@ async fn image_data_uri(
         Some((key, store)) if !store.is_empty() => (Some(store), key),
         _ => (None, rest.split_once('?').map_or(rest, |(key, _)| key)),
     };
-    let (bytes, stored_content_type) = crate::routes::storage::read_object_bytes(
+    let (bytes, stored_content_type) = crate::object_service::read_object_bytes(
         state.storage(),
         state.store(),
         workspace_id,

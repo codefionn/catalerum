@@ -1,10 +1,11 @@
 //! Shared provider traits (SOUL §3.2): the core knows no concrete provider.
 //!
-//! Every external integration — LLM, calendars, storage, executors, channels —
-//! is reached only through one of these traits. Concrete impls live in the
+//! Every external integration — LLM, calendars, storage, executors — is
+//! reached only through one of these traits. Concrete impls live in the
 //! provider crates (`catalerum-llm`, `catalerum-calendar`, `catalerum-storage`,
-//! `catalerum-exec`, `catalerum-channels`). If core code names a vendor outside
-//! a provider crate, it's a bug.
+//! `catalerum-exec`). Messaging channels use the `Channel` trait defined in
+//! `catalerum-channels` itself. If core code names a vendor outside a provider
+//! crate, it's a bug.
 //!
 //! Async methods use [`async_trait`]. Streaming methods return
 //! [`futures::stream::BoxStream`] so impls stay object-safe and pluggable.
@@ -12,7 +13,6 @@
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
 
 use crate::audio::{SpeechAudio, SpeechRequest, TranscriptionRequest, TranscriptionResponse};
 use crate::embed::{EmbeddingRequest, EmbeddingResponse};
@@ -481,52 +481,6 @@ pub trait Executor: Send + Sync {
     async fn reap(&self) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
-}
-
-// ---------------------------------------------------------------------------
-// Channels (SOUL §25)
-// ---------------------------------------------------------------------------
-
-/// Where to deliver an outbound message (SOUL §25). Provider-native target
-/// (room id / chat id / channel id).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ChannelTarget(pub String);
-
-/// An outbound message to a channel (SOUL §25).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct OutMessage {
-    /// Markdown/plain text body.
-    pub body: String,
-    /// Optional structured payload (attachments, formatting), provider-interpreted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extra: Option<Json>,
-}
-
-/// An inbound message from a channel (SOUL §25). Surfaces as a `ChannelMessage`
-/// automation trigger and can open a `Conversation { origin: Channel }`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InMessage {
-    /// Where the message came from (room/chat id).
-    pub source: ChannelTarget,
-    /// Provider-native sender identifier.
-    pub sender: String,
-    /// Message body.
-    pub body: String,
-    /// Provider-native message id (for threading / dedup).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<String>,
-}
-
-/// A bidirectional messaging channel (SOUL §25). Impls: Matrix, Telegram,
-/// Discord.
-#[async_trait]
-pub trait Channel: Send + Sync {
-    /// Deliver an outbound message.
-    async fn send(&self, target: ChannelTarget, msg: OutMessage) -> Result<()>;
-
-    /// Subscribe to inbound messages.
-    async fn subscribe(&self) -> Result<BoxStream<'static, Result<InMessage>>>;
 }
 
 // ---------------------------------------------------------------------------

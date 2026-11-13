@@ -1,0 +1,64 @@
+/* --- Grants panel (SOUL §19 capability-grant builder) — shared `.pane-*`
+   chrome; only the editor form below is grants-specific --- */
+.grant-form { flex: 1; display: flex; flex-direction: column; gap: .5rem; padding: 1rem; min-height: 0; overflow-y: auto; }
+.grant-input {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .55rem .7rem; font: inherit;
+}
+.grant-input:focus { outline: none; border-color: var(--accent); }
+.grant-input:disabled { color: var(--muted); }
+.grant-input-name { font-size: 1.05rem; font-weight: 700; }
+.grant-field-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-top: .3rem; }
+.grant-textarea {
+  min-height: 7rem; resize: vertical; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .6rem .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5;
+}
+.grant-textarea:focus { outline: none; border-color: var(--accent); }
+.grant-textarea-sm { min-height: 4rem; }
+.grant-form-error { color: var(--err-fg); font-size: .85rem; }
+.grant-form-actions { display: flex; gap: .5rem; margin-top: .2rem; }
+
+/* --- Grants: visual capability builder + constraints form --- */
+.cap-rows { display: flex; flex-direction: column; gap: .55rem; }
+.cap-row-wrap {
+  display: flex; flex-direction: column; gap: .2rem;
+  padding: .5rem .55rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.cap-row { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.cap-action { flex: 0 0 auto; min-width: 6.5rem; cursor: pointer; }
+.cap-domain { flex: 1 1 9rem; min-width: 8rem; }
+.cap-sel { flex: 1 1 9rem; min-width: 8rem; }
+.cap-cons { margin-top: .1rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.cap-icon {
+  flex: none; background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 6px; padding: .35rem .5rem; font-size: .85rem; line-height: 1; cursor: pointer;
+}
+.cap-icon:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
+.cap-icon:disabled { opacity: .5; cursor: not-allowed; }
+.cap-icon-del:hover:not(:disabled) { color: var(--err-fg); border-color: var(--err-border); background: var(--err-bg); }
+.cap-preview { font-size: .74rem; color: var(--accent); padding-left: .1rem; }
+.cap-add {
+  align-self: flex-start; background: transparent; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 8px; padding: .4rem .8rem;
+  font: inherit; font-size: .82rem; cursor: pointer; margin-top: -.1rem;
+}
+.cap-add:hover:not(:disabled) { border-color: var(--accent); color: var(--fg); }
+.cap-add:disabled { opacity: .5; cursor: not-allowed; }
+.cap-constraints {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .6rem .7rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.cap-check { display: flex; align-items: center; gap: .45rem; font-size: .85rem; cursor: pointer; }
+.cap-check input { accent-color: var(--accent-2); cursor: pointer; }
+.cap-cap-row { display: flex; gap: .8rem; flex-wrap: wrap; }
+.cap-num { display: flex; flex-direction: column; gap: .2rem; flex: 1 1 9rem; min-width: 8rem; }
+.cap-num-label { font-size: .72rem; color: var(--muted); }
+.cap-num .grant-input { width: 100%; }
+.cap-other { margin-top: .1rem; }
+.cap-other > summary {
+  cursor: pointer; user-select: none; font-size: .76rem; color: var(--muted);
+}
+.cap-other > summary:hover { color: var(--fg); }
+.cap-other > textarea { margin-top: .4rem; }
+

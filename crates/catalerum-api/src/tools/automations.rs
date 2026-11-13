@@ -140,11 +140,13 @@ pub(crate) fn register_trigger_link_tool(
     registry.register(Arc::new(TriggerLinkTool { signer, base_url }));
 }
 
-/// Validate + compile a create/replace into the stored `triggers` column, mirroring
-/// the `/automations` REST path: a **graph** spec (its `spec` carries a `"graph"`)
-/// is parsed + validated and its Trigger nodes are compiled into dispatch triggers;
-/// a **linear** spec is validated via [`AutomationSpec`](catalerum_automation::AutomationSpec).
-/// Returns the triggers to persist, or an `invalid`-kind error (a `400` equivalent).
+/// Validate + compile a create/replace into the stored `triggers` column. Shared by
+/// the automation tools and the `/automations` REST create/replace handlers: a
+/// **graph** spec (its `spec` carries a `"graph"`) is parsed + validated and its
+/// Trigger nodes are compiled into dispatch triggers (the graph itself stays in
+/// `spec`; the column is its dispatch shadow); a **linear** spec is validated via
+/// [`AutomationSpec`](catalerum_automation::AutomationSpec) and its triggers are
+/// returned unchanged. Errors are `invalid`-kind, which REST maps to a `400`.
 pub(crate) fn compile_automation_triggers(
     spec: Option<&Json>,
     triggers: Vec<Json>,

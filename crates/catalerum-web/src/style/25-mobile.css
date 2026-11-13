@@ -1,0 +1,264 @@
+/* ── Mobile (≤768px) ─────────────────────────────────────────────────────────
+   Phones and narrow tablets. Three moves:
+   1. The workbench nav and the chat sessions sidebar become off-canvas drawers
+      (hamburger in the header / "Chats" in the chat toolbar) so the content
+      pane gets the full width.
+   2. Every master-detail panel stacks: the list pane sits above the detail at
+      a capped height instead of beside it at a fixed width.
+   3. Modals go near-fullscreen and their tab/rail columns turn into
+      horizontally scrollable rows.
+   Hover-revealed row actions are always visible here — touch has no hover.  */
+@media (max-width: 768px) {
+  /* Header: tighter, hamburger shown, tagline dropped for space. */
+  .wb-header { padding: .55rem .7rem; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .wb-subtitle { display: none; }
+  .wb-menu-btn { display: inline-flex; }
+
+  /* Left nav → off-canvas drawer over a scrim. */
+  .wb-nav {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(78vw, 280px); padding-top: .8rem; overflow-y: auto;
+    transform: translateX(-105%); transition: transform .18s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.45);
+  }
+  .wb-nav-open { transform: none; }
+  .wb-nav-scrim-open { display: block; opacity: 1; pointer-events: auto; }
+  .nav-item { padding: .65rem .7rem; }
+  .nav-section-toggle { padding: .65rem .7rem; }
+  /* Pinned-apps quick menu: no hover on touch — only the ▸ toggle opens it,
+     inline (a right-side flyout would clip against the drawer's overflow). */
+  .nav-apps-flyout {
+    position: static; margin: 0 0 .2rem 1rem; padding: 0; min-width: 0;
+    max-width: none; background: transparent; border: 0; box-shadow: none;
+  }
+  .nav-apps:hover .nav-apps-flyout { display: none; }
+  .nav-apps.nav-apps-open .nav-apps-flyout { display: block; }
+  /* The sidebar pin + delete controls can't be hover-revealed on touch. */
+  .apps-pin { visibility: visible; }
+  .apps-row .row-acts-reveal { opacity: 1; }
+
+  /* Chat: the sessions sidebar becomes a drawer toggled from the toolbar. */
+  .chat-sessions-toggle { display: inline-block; }
+  .chat-sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(85vw, 320px);
+    transform: translateX(-105%); transition: transform .18s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.45);
+  }
+  .chat-sidebar-open { transform: none; }
+  .chat-sidebar-scrim-open { display: block; opacity: 1; pointer-events: auto; }
+  /* Session row actions inline instead of hover-overlaid — and always shown
+     (no hover on touch), overriding the shared `.row-acts-reveal` opacity. */
+  .chat-session-acts { position: static; transform: none; }
+  .chat-session-row .row-acts-reveal { opacity: 1; }
+  .chat-session-row .chat-session { width: auto; }
+  /* Right side panel (Output/Settings) overlays instead of splitting the pane. */
+  .chat-side {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 60;
+    width: min(92vw, 360px); box-shadow: 0 0 40px rgba(0,0,0,.45);
+  }
+  .msg { max-width: 94%; }
+  /* No hover on touch — keep the per-message actions visible. */
+  .msg-acts { opacity: .6; }
+  .chat-log { padding: .7rem; }
+  /* Right side panel gets a tap-away backdrop like the other drawers. */
+  .chat-side-scrim { display: block; }
+  /* Composer: the textarea takes a full row and the actions wrap beneath it, so
+     typing space never collapses when Send/Stop/📎 crowd the row. Touch-sized. */
+  .chat-input { padding: .5rem .7rem; }
+  .chat-input-row { flex-wrap: wrap; }
+  .chat-textarea { flex-basis: 100%; }
+  .chat-send { flex: 1 1 auto; }
+  .chat-send, .chat-stop, .chat-attach-btn, .chat-mic, .chat-voice { min-height: 44px; }
+  /* Larger session tap targets; row actions are already shown inline (no hover). */
+  .chat-session { padding: .6rem .7rem; }
+  .row-act { padding: .45rem .55rem; }
+
+  /* Master-detail panels stack: list pane on top (capped), detail below. The
+     drawer panels below also go column so their ☰ toggle bar sits atop the
+     detail pane (the list itself is fixed/off-canvas, out of flow). */
+  .pane-split { flex-direction: column; }
+  /* Email keeps the stacked list-on-top layout (it has its own mailboxes-rail
+     drawer, so the message list stays in flow beneath it). */
+  .email-list {
+    width: 100%; max-height: 42vh;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  /* Apps/Skills/Profiles/Grants/History/Memory/Calendars/Notes/Automations: the
+     list pane becomes an off-canvas drawer instead of stacking, toggled by the
+     detail pane's ☰ (`widgets::list_drawer_*`) — the same pattern as the chat
+     sessions sidebar. */
+  .list-drawer {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(85vw, 320px); max-height: none;
+    background: var(--panel); border: 0; border-right: 1px solid var(--border);
+    transform: translateX(-105%); transition: transform .18s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.45);
+  }
+  .list-drawer-open { transform: none; }
+  .list-drawer-scrim-open { display: block; opacity: 1; pointer-events: auto; }
+  .list-drawer-toggle { display: inline-flex; }
+  /* In a column layout the detail pane needs an explicit min-height to shrink
+     (flex min-height:auto would otherwise let it overflow the viewport). */
+  .pane-split > :not(.pane-list) { min-height: 0; }
+
+  /* Email: the mailboxes rail becomes a left drawer over the stacked
+     list/detail panes, toggled from the list header's ☰ button. */
+  .email-mailboxes {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(85vw, 300px);
+    transform: translateX(-105%); transition: transform .18s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.45);
+  }
+  .email-mailboxes-open { transform: none; }
+  .email-mbx-scrim-open { display: block; opacity: 1; pointer-events: auto; }
+  .email-mbx-toggle { display: inline-flex; }
+
+  /* Email on mobile is a true master→detail: the list fills the screen until a
+     message is opened, which swaps to a full-screen detail carrying a Back bar;
+     Back returns to the list. Overrides the shared 42vh list cap above. */
+  .email-panel .email-list { flex: 1; max-height: none; border-bottom: 0; }
+  .email-panel-detail .email-list { display: none; }
+  .email-panel:not(.email-panel-detail) .email-detail { display: none; }
+  .email-detail-topbar { display: flex; }
+
+  /* Panel headers with action rows wrap instead of overflowing. */
+  .cal-header, .files-header, .graph-header { flex-wrap: wrap; gap: .5rem; }
+  /* The calendar's button cluster (Refresh/Add event/New calendar/Connect) is a
+     nested flex row with `flex-shrink:0` — it keeps its full content width and
+     pushes the page into horizontal overflow on a phone. Give it the full row
+     (so `.cal-header`'s wrap drops it below the titles) and let its own buttons
+     wrap within that width. */
+  .cal-header-actions { flex-wrap: wrap; width: 100%; }
+
+  /* Agenda density: on a phone the list is the primary surface, so spend less
+     of the viewport on chrome and whitespace while retaining every event field.
+     The mode classes keep Month/Week/Day at their roomier, grid-friendly scale. */
+  .cal-panel-agenda .cal-header { padding: .55rem .65rem; }
+  .cal-panel-agenda .cal-subtitle { display: none; }
+  .cal-panel-agenda .cal-header-actions { gap: .3rem; }
+  .cal-panel-agenda .cal-btn { padding: .35rem .55rem; font-size: .78rem; }
+  .cal-panel-agenda .cal-viewbar { padding: .35rem .6rem; }
+  .cal-panel-agenda .cal-viewtabs { width: 100%; }
+  .cal-panel-agenda .cal-viewtab { flex: 1; padding: .28rem .35rem; }
+  .cal-panel-agenda .cal-filter { gap: .25rem; padding: .35rem .6rem; }
+  .cal-panel-agenda .cal-filter-date { min-width: 0; padding: .25rem .35rem; }
+  .cal-panel-agenda .cal-labelbar { gap: .25rem; padding: .3rem .6rem .35rem; }
+  .cal-panel-agenda .cal-label-chip { padding: .1rem .45rem; }
+
+  .cal-body-agenda { padding: .45rem .55rem .7rem; }
+  .cal-body-agenda .cal-agenda { gap: .65rem; max-width: none; }
+  .cal-body-agenda .cal-day { gap: .18rem; }
+  .cal-body-agenda .cal-day-heading {
+    top: -.45rem; padding: .12rem 0; font-size: .7rem; letter-spacing: .45px;
+  }
+  .cal-body-agenda .cal-event-list { gap: .18rem; }
+  .cal-body-agenda .cal-event {
+    gap: .45rem; padding: .34rem .45rem; border-radius: 7px;
+  }
+  .cal-body-agenda .cal-event-time {
+    min-width: 5.7rem; font-size: .72rem; line-height: 1.25;
+  }
+  .cal-body-agenda .cal-event-main { gap: .08rem; }
+  .cal-body-agenda .cal-event-summary {
+    gap: .28rem; font-size: .86rem; line-height: 1.2;
+  }
+  .cal-body-agenda .cal-event-meta { gap: .2rem .3rem; line-height: 1.15; }
+  .cal-body-agenda .cal-event-loc { font-size: .72rem; }
+  .cal-body-agenda .cal-event-cal { font-size: .62rem; padding: .02rem .3rem; }
+  .cal-body-agenda .cal-event-label { font-size: .6rem; padding: .01rem .3rem; }
+  .cal-body-agenda .cal-event-detail {
+    margin-top: .2rem; gap: .25rem; padding: .4rem .45rem;
+  }
+  .cal-body-agenda .cal-event-body { font-size: .8rem; line-height: 1.4; }
+  .cal-body-agenda .cal-event-kv { gap: .4rem; font-size: .76rem; }
+  .cal-body-agenda .cal-event-detail-k { min-width: 4.4rem; }
+  /* The shared mobile action rule enlarges all row controls. Agenda actions sit
+     inside every writable event, so restore their already-usable base size to
+     avoid making otherwise one-line events nearly twice as tall. */
+  .cal-body-agenda .cal-event-acts .row-act { padding: .3rem .4rem; }
+
+  /* Modals: near-fullscreen; side rails become horizontal scrollers. */
+  .settings-overlay { padding: .6rem; }
+  .settings-modal { max-height: calc(100vh - 1.2rem); max-height: calc(100dvh - 1.2rem); }
+  .settings-layout { flex-direction: column; }
+  .settings-tabs {
+    flex-direction: row; overflow-x: auto; min-width: 0; padding: .45rem .5rem;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  .settings-tab { flex: none; white-space: nowrap; }
+  .org-modal { height: auto; }
+  .org-layout { flex-direction: column; }
+  .org-rail {
+    width: 100%; max-height: 11rem;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  .org-detail { min-height: 0; }
+
+  /* Trim the tab-panel side padding so forms/lists aren't cramped on a phone. */
+  .settings-content, .org-detail { padding: .9rem .85rem 1.1rem; }
+
+  /* Row-layout forms (API keys: lifetime + scope + Issue) stack vertically; the
+     fixed-narrow lifetime input goes full-width so the button isn't pushed off. */
+  .settings-form-row { flex-direction: column; align-items: stretch; }
+  .settings-input-narrow { max-width: none; }
+
+  /* Key/value rows (LLM gateway) stack — a 9.5rem term leaves too little for the
+     value on a narrow viewport. */
+  .settings-kv-row { flex-direction: column; gap: .1rem; align-items: stretch; }
+  .settings-kv-row dt { min-width: 0; }
+
+  /* Service rows wrap and drop the wide fixed name column so the status badge
+     never squeezes the name/detail off-screen. */
+  .settings-svc { flex-wrap: wrap; }
+  .settings-svc-name { min-width: 0; }
+
+  /* Connection / token / section-head rows wrap their trailing controls under the
+     label instead of overflowing when the row runs out of width. */
+  .settings-conn, .settings-token, .settings-section-head { flex-wrap: wrap; }
+
+  /* Topology editor keeps the ordered-chain semantics while collapsing its
+     desktop two-column fields into touch-friendly single-column rows. */
+  .llmleaf-heading { flex-direction: column; gap: .45rem; }
+  .llmleaf-form-grid { grid-template-columns: 1fr; }
+  .llmleaf-target-row { grid-template-columns: 1.7rem minmax(0, 1fr) 1.7rem; }
+  .llmleaf-target-row .settings-field:nth-of-type(2) { grid-column: 2 / 3; }
+  .llmleaf-target-remove { grid-column: 3; grid-row: 1 / 3; }
+  .llmleaf-form-footer { align-items: stretch; flex-direction: column; }
+  .llmleaf-save { width: 100%; min-height: 2.65rem; }
+  .llmleaf-entry { align-items: flex-start; flex-wrap: wrap; }
+  .llmleaf-entry-actions { width: 100%; justify-content: flex-end; }
+
+  /* iOS zooms the page when a focused field's font is under 16px. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Automation flow editor (SOUL §11). A 19rem side rail would crush the canvas on
+     a phone, so the per-node inspector becomes a bottom sheet. It's viewport-FIXED
+     (not absolute in the canvas) because the editor scrolls inside a long form — an
+     absolute sheet would ride off-screen with the canvas. Shown only when a node is
+     selected (flow-config-open); tap the canvas or ✕ to dismiss. */
+  .flow-config {
+    position: fixed; left: 0; right: 0; bottom: 0; width: auto;
+    max-height: 60vh; max-height: 60dvh; z-index: 60;
+    border-left: 0; border-top: 1px solid var(--border); border-radius: 16px 16px 0 0;
+    box-shadow: 0 -14px 40px rgba(0,0,0,.55);
+    transform: translateY(calc(100% + 8px)); transition: transform .2s ease;
+  }
+  .flow-config-open { transform: none; }
+  .flow-cfg-close { display: inline-flex; }
+  /* The config head sticks to the sheet top so Duplicate/Delete/✕ stay reachable
+     while the body scrolls. */
+  .flow-config-open .flow-config-head {
+    position: sticky; top: 0; z-index: 1; margin: -.8rem -.85rem .2rem; padding: .7rem .85rem;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  /* Give the canvas real estate: the editor block fills most of the phone viewport
+     (it scrolls into view below the name/fire/palette chrome). */
+  .auto-flow-wrap { height: 80vh; height: 80dvh; min-height: 26rem; }
+  /* Comfortable touch targets for the zoom cluster (was ~27px). */
+  .flow-zoom-btn { min-width: 2.2rem; height: 2.2rem; }
+  /* Trim palette chrome so more of the fixed-height wrap is canvas, not buttons. */
+  .flow-palette { padding: .45rem .55rem; gap: .35rem; }
+  .flow-pal-btn { padding: .3rem .6rem .3rem .5rem; }
+  .flow-node-search { padding: .4rem .55rem; }
+}

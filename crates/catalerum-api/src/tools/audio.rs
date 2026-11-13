@@ -70,7 +70,7 @@ impl Tool for SpeechToTextTool {
                 .and_then(|s| s.transcription_model)
                 .unwrap_or_else(|| self.default_model.clone()),
         };
-        let (bytes, _content_type) = crate::routes::storage::read_object_bytes(
+        let (bytes, _content_type) = crate::object_service::read_object_bytes(
             &self.storage,
             &self.store,
             ws,
@@ -177,7 +177,7 @@ impl Tool for TextToSpeechTool {
         let audio = self.llm.synthesize(request).await?;
         let content_type = (!audio.content_type.is_empty()).then(|| audio.content_type.clone());
         let size = audio.data.len();
-        let object = crate::routes::storage::write_object_bytes(
+        let object = crate::object_service::write_object_bytes(
             &self.storage,
             &self.store,
             ws,

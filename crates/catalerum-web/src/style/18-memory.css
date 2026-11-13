@@ -1,0 +1,53 @@
+/* --- Memory panel (SOUL §22 memories + profile) — a wide shared `.pane-list`
+   whose rows are content cards, not nav rows --- */
+.mem-list { width: 360px; }
+.mem-new { display: flex; flex-direction: column; gap: .4rem; padding: .7rem .8rem; border-bottom: 1px solid var(--border); }
+.mem-new-text {
+  min-height: 3rem; resize: vertical; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .5rem .6rem; font: inherit; font-size: .88rem;
+}
+.mem-new-text:focus { outline: none; border-color: var(--accent); }
+.mem-new-actions { display: flex; gap: .5rem; align-items: center; }
+.mem-select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: .35rem .5rem; font: inherit; font-size: .82rem;
+}
+.mem-select:focus { outline: none; border-color: var(--accent); }
+.mem-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .35rem .7rem; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.mem-btn:hover:not(:disabled) { border-color: var(--accent); }
+.mem-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.mem-btn-primary { background: var(--accent-2); color: var(--on-accent); border-color: var(--accent-2); }
+.mem-btn-primary:hover:not(:disabled) { background: var(--accent); }
+.mem-btn-danger { background: var(--err); color: var(--err-fg); border-color: var(--err-border); }
+.mem-btn-danger:hover:not(:disabled) { border-color: var(--err-fg); }
+.mem-items { list-style: none; margin: 0; padding: .5rem; display: flex; flex-direction: column; gap: .4rem; }
+.mem-item {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px;
+  padding: .55rem .65rem; display: flex; flex-direction: column; gap: .3rem;
+}
+.mem-item-head { display: flex; align-items: baseline; gap: .5rem; }
+.mem-scope { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; border-radius: 4px; padding: .05rem .35rem; }
+.mem-scope-private { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.mem-scope-shared { color: var(--ok-fg); background: var(--ok-bg); }
+.mem-when { font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mem-item-text { font-size: .9rem; white-space: pre-wrap; word-break: break-word; }
+.mem-edit-text {
+  min-height: 3rem; resize: vertical; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--accent-2); border-radius: 7px; padding: .45rem .6rem; font: inherit; font-size: .88rem;
+}
+.mem-edit-text:focus { outline: none; border-color: var(--accent); }
+.mem-item-actions { display: flex; gap: .4rem; }
+.mem-profile { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 1rem; min-height: 0; }
+.mem-profile-head { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .6rem; }
+.mem-profile-hint { font-size: .78rem; color: var(--muted); }
+.mem-profile-text {
+  flex: 1; min-height: 12rem; resize: none; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; line-height: 1.5;
+}
+.mem-profile-text:focus { outline: none; border-color: var(--accent); }
+.mem-profile-actions { display: flex; gap: .5rem; margin-top: .6rem; }
+

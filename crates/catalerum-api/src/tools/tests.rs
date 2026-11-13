@@ -1264,7 +1264,7 @@ async fn write_and_move_object_tools_round_trip() {
         .expect("write");
     assert_eq!(out["key"], json!("reports/note.md"));
     assert_eq!(out["size"], json!(13));
-    let (bytes, _) = crate::routes::storage::read_object_bytes(
+    let (bytes, _) = crate::object_service::read_object_bytes(
         &storage,
         &store_db,
         ws.id,
@@ -1282,7 +1282,7 @@ async fn write_and_move_object_tools_round_trip() {
         .invoke(json!({ "key": "blob.bin", "content_base64": b64 }), &ctx)
         .await
         .expect("binary write");
-    let (bytes, _) = crate::routes::storage::read_object_bytes(
+    let (bytes, _) = crate::object_service::read_object_bytes(
         &storage,
         &store_db,
         ws.id,
@@ -1313,7 +1313,7 @@ async fn write_and_move_object_tools_round_trip() {
         .expect("move");
     assert_eq!(out["moved"], json!(true));
     assert_eq!(out["key"], json!("archive/note.md"));
-    let (bytes, _) = crate::routes::storage::read_object_bytes(
+    let (bytes, _) = crate::object_service::read_object_bytes(
         &storage,
         &store_db,
         ws.id,
@@ -1324,7 +1324,7 @@ async fn write_and_move_object_tools_round_trip() {
     .expect("read moved");
     assert_eq!(bytes, b"hello *world*");
     assert!(
-        crate::routes::storage::read_object_bytes(
+        crate::object_service::read_object_bytes(
             &storage,
             &store_db,
             ws.id,

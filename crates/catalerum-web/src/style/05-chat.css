@@ -1,0 +1,416 @@
+/* Right workbench sidebar: tabbed Output (terminal) + Settings (pickers), SOUL §12/§20. */
+.chat-side {
+  width: 320px; flex-shrink: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--border); background: var(--panel); min-height: 0;
+}
+/* Backdrop behind the mobile right-panel overlay; inert on desktop (split pane). */
+.chat-side-scrim {
+  display: none; position: fixed; inset: 0; z-index: 59; background: var(--scrim); border: 0; padding: 0;
+}
+.chat-side-tabs { display: flex; align-items: center; gap: .15rem; padding: .35rem .4rem; border-bottom: 1px solid var(--border); }
+.chat-side-tab {
+  flex: none; background: transparent; color: var(--muted); border: 1px solid transparent;
+  border-radius: 7px; padding: .3rem .65rem; font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer;
+}
+.chat-side-tab:hover { background: var(--panel-2); color: var(--fg); }
+.chat-side-tab-active { background: var(--panel-2); color: var(--fg); border-color: var(--accent-2); }
+.chat-side-close {
+  margin-left: auto; flex: none; background: transparent; color: var(--muted);
+  border: 1px solid transparent; border-radius: 6px; padding: .25rem .45rem; font-size: .8rem; line-height: 1; cursor: pointer;
+}
+.chat-side-close:hover { color: var(--fg); background: var(--panel-2); }
+.chat-side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.chat-side-hint { color: var(--muted); font-size: .85rem; padding: .9rem .8rem; margin: 0; }
+.chat-settings { display: flex; flex-direction: column; gap: .8rem; padding: .8rem; overflow-y: auto; }
+.chat-set-field { display: flex; flex-direction: column; gap: .25rem; }
+.chat-set-label { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.chat-set-select {
+  width: 100%; padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--fg); font: inherit; font-size: .85rem;
+}
+.chat-set-select:focus { outline: none; border-color: var(--accent); }
+.chat-set-error { color: var(--danger, #c0392b); font-size: .78rem; }
+/* Current model's capability chips under the chat Model picker (SOUL §7/§9): a
+   muted pill per capability; the ones the model supports light up in accent. */
+.chat-set-caps { display: flex; flex-wrap: wrap; gap: .3rem; }
+.chat-cap {
+  display: inline-flex; align-items: center; gap: .25rem; padding: .12rem .45rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2);
+  color: var(--muted); font-size: .72rem; line-height: 1.5; white-space: nowrap;
+}
+.chat-cap-on { border-color: var(--accent); color: var(--accent); background: var(--bg); }
+.chat-cap-force {
+  align-self: flex-start; margin-top: .1rem; padding: .2rem .5rem; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  font-size: .72rem; cursor: pointer;
+}
+.chat-cap-force:hover { color: var(--fg); border-color: var(--accent); }
+/* The Settings tab's Debug section (SOUL §12): the "Copy chat as JSON" export. */
+.chat-debug-btn {
+  align-self: flex-start; padding: .35rem .6rem; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+  font: inherit; font-size: .82rem; cursor: pointer;
+}
+.chat-debug-btn:hover:enabled { border-color: var(--accent); }
+.chat-debug-btn:disabled { opacity: .6; cursor: default; }
+.chat-debug-btn-done { border-color: var(--accent); color: var(--accent); }
+/* Inside a settings field the panel-level hint padding would double up. */
+.chat-debug-hint { padding: 0; }
+/* In the sidebar's Output tab the terminal pane fills the height (no inline cap). */
+.term-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.term-pane-bar { display: flex; align-items: center; gap: .5rem; padding: .35rem 1rem; background: var(--bg-alt, var(--bg)); }
+.term-pane-label { font-size: .8rem; color: var(--muted, #888); }
+.term-pane-select { padding: .2rem .5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: .8rem; }
+.term-pane-refresh { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; padding: .15rem .45rem; }
+.term-out { flex: 1; overflow: auto; margin: 0; padding: .6rem 1rem; background: #11151a; color: #d6deeb; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; line-height: 1.3; white-space: pre-wrap; word-break: break-word; min-height: 6rem; }
+/* `overflow-x: hidden` is the backstop against horizontal panning: every wide
+   block child (pre/table/mermaid/math) scrolls inside its own box, so the log
+   itself must never scroll sideways — panning here is what read as "the chat
+   gets wider" on phones. */
+.chat-log { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1rem; display: flex; flex-direction: column; gap: .6rem; }
+.chat-empty { margin: auto; color: var(--muted); text-align: center; }
+.chat-empty-disclaimer { margin-top: .5rem; font-size: .8rem; opacity: .8; }
+.msg { display: flex; flex-direction: column; gap: .15rem; max-width: 70ch; }
+.msg-user { align-self: flex-end; }
+.msg-role { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.msg-text {
+  white-space: pre-wrap; word-break: break-word; padding: .55rem .7rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border);
+}
+.msg-user .msg-text { background: var(--user); }
+.msg-error .msg-text { background: var(--err); border-color: var(--err-border); }
+.msg-cursor { animation: blink 1s step-start infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+.msg-thinking { font-size: .8rem; color: var(--muted); margin-bottom: .3rem; }
+.msg-thinking > summary { cursor: pointer; user-select: none; }
+.msg-thinking-text { display: block; white-space: pre-wrap; word-break: break-word; margin-top: .3rem; padding-left: .6rem; border-left: 2px solid var(--border); }
+.msg-cost {
+  align-self: flex-start; margin-top: .25rem; font-size: .68rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* Per-message action row: subtle controls under a bubble — copy the message
+   text, and (under a user bubble) regenerate the conversation from it. Right-
+   aligned to sit under the right-aligned user bubble; revealed on row hover to
+   stay unobtrusive, like the sidebar act buttons. */
+.msg-acts {
+  align-self: flex-end; display: flex; align-items: center; gap: .3rem;
+  margin-top: .2rem; opacity: 0; transition: opacity .12s ease;
+}
+.msg:hover .msg-acts, .msg-acts:focus-within { opacity: .8; }
+.msg-act {
+  padding: .12rem .45rem; font-size: .68rem; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  cursor: pointer; transition: color .12s, border-color .12s, opacity .12s;
+}
+.msg-act:hover { color: var(--fg); border-color: var(--accent-2); opacity: 1; }
+.msg-regen:disabled, .msg:hover .msg-regen:disabled { cursor: default; opacity: .35; }
+
+/* Shared copy-to-clipboard button (`widgets::copy_button`): the `.copy-btn-done`
+   flash tints it success-green for ~1.2s after a copy. The resting look comes
+   from the caller's extra class (`.msg-act`, `.pane-btn`, …). */
+.copy-btn { cursor: pointer; }
+/* Two-class selector so the flash outranks the callers' own `.msg-act` /
+   `.pane-btn` colour rules regardless of stylesheet order. */
+.copy-btn.copy-btn-done, .copy-btn.copy-btn-done:hover {
+  color: var(--ok-fg); border-color: var(--ok-border); opacity: 1;
+}
+/* Per-turn token info-icon: a muted ⓘ whose native title tooltip spells out the
+   turn's token + cache usage and the running conversation total. */
+.msg-tokens {
+  align-self: flex-start; margin-top: .25rem; font-size: .72rem; line-height: 1;
+  color: var(--muted); cursor: help; user-select: none;
+}
+.msg-tokens:hover { color: var(--accent); }
+/* Tool-call cards: one collapsible <details> per tool the assistant ran this
+   turn, modelled on the .msg-thinking block. Live cards show a spinner that
+   flips to ✓/✗ in place when the result arrives. */
+.msg-tools { display: flex; flex-direction: column; gap: .3rem; margin: .1rem 0 .3rem; }
+.msg-tool {
+  font-size: .8rem; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.msg-tool-summary {
+  display: flex; align-items: center; gap: .4rem; cursor: pointer; user-select: none;
+  padding: .35rem .55rem; color: var(--fg);
+}
+.msg-tool-summary::-webkit-details-marker { display: none; }
+.msg-tool-glyph { font-size: .8rem; color: var(--accent); width: 1rem; text-align: center; }
+.msg-tool-failed .msg-tool-glyph { color: var(--err-fg); }
+.msg-tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .74rem;
+  color: var(--fg); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 5px; padding: .05rem .35rem;
+}
+.msg-tool-src {
+  flex: none; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--accent); background: var(--panel); border: 1px solid var(--accent-2);
+  border-radius: 4px; padding: .02rem .3rem;
+}
+.msg-tool-detail {
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.msg-tool-dur {
+  margin-left: auto; flex: none; font-size: .68rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.msg-tool-body {
+  padding: .1rem .55rem .5rem; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.msg-tool-sub {
+  font-size: .66rem; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); margin-top: .2rem;
+}
+.msg-tool-kv { margin: 0; display: flex; flex-direction: column; gap: .15rem; }
+.msg-tool-row { display: flex; gap: .5rem; }
+.msg-tool-key { color: var(--muted); min-width: 4rem; }
+.msg-tool-val { color: var(--fg); word-break: break-word; }
+.msg-tool-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
+/* Labelled result groups (batch web search, ask_user Q&A rows). */
+.msg-tool-groups { display: flex; flex-direction: column; gap: .4rem; }
+/* ask_user Q&A card rows: the question, then the answer the user gave (or the
+   offered options while unanswered). */
+.msg-tool-qa { display: flex; flex-direction: column; gap: .1rem; }
+.msg-tool-question { color: var(--fg); font-weight: 600; }
+.msg-tool-answer { color: var(--fg); padding-left: .9rem; word-break: break-word; }
+.msg-tool-answer::before { content: "↳ "; color: var(--muted); }
+.msg-tool-hit { word-break: break-word; }
+.msg-tool-link { color: var(--accent); text-decoration: underline; }
+.msg-tool-snip { color: var(--muted); font-size: .74rem; }
+.msg-tool-md { word-break: break-word; }
+.msg-tool-empty { color: var(--muted); }
+.msg-tool-args, .msg-tool-out, .msg-tool-cmd, .msg-tool-err {
+  margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 14rem; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .74rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: .4rem .5rem;
+}
+.msg-tool-cmd { color: #d6deeb; }
+.msg-tool-err { color: var(--err-fg); background: var(--err); border-color: var(--err-border); }
+.msg-tool-trunc {
+  flex: none; font-size: .62rem; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--warn-fg); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 4px; padding: .02rem .3rem;
+}
+.msg-tool-spinner {
+  display: inline-block; width: .7rem; height: .7rem; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: msg-tool-spin .7s linear infinite;
+}
+@keyframes msg-tool-spin { to { transform: rotate(360deg); } }
+/* Rendered Markdown inside a finalized assistant bubble. The container keeps the
+   `.msg-text` bubble; these tame the block children so they sit flush in it. */
+.msg-markdown > :first-child { margin-top: 0; }
+.msg-markdown > :last-child { margin-bottom: 0; }
+.msg-markdown p { margin: 0 0 .5rem; }
+.msg-markdown h1, .msg-markdown h2, .msg-markdown h3,
+.msg-markdown h4, .msg-markdown h5, .msg-markdown h6 { margin: .4rem 0 .3rem; line-height: 1.25; }
+.msg-markdown h1 { font-size: 1.2rem; }
+.msg-markdown h2 { font-size: 1.08rem; }
+.msg-markdown h3 { font-size: 1rem; }
+.msg-markdown h4 { font-size: .92rem; }
+.msg-markdown h5 { font-size: .86rem; }
+.msg-markdown h6 { font-size: .86rem; color: var(--muted); }
+.msg-markdown ul, .msg-markdown ol { margin: 0 0 .5rem; padding-left: 1.25rem; }
+.msg-markdown li { margin: .12rem 0; }
+.msg-markdown li > ul, .msg-markdown li > ol { margin: .12rem 0 0; }
+.msg-markdown hr { border: 0; border-top: 1px solid var(--border); margin: .6rem 0; }
+.msg-markdown a { color: var(--accent); text-decoration: underline; }
+.msg-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem;
+}
+.msg-markdown pre {
+  margin: 0 0 .5rem; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: .5rem .6rem; overflow-x: auto;
+}
+.msg-markdown pre code { background: none; border: 0; padding: 0; font-size: .82rem; }
+.msg-markdown blockquote {
+  margin: 0 0 .5rem; padding-left: .6rem; border-left: 3px solid var(--border); color: var(--muted);
+}
+/* Markdown tables/images stay inside the bubble: a table scrolls horizontally
+   rather than widening the chat (critical on phones); an image never overflows. */
+.msg-markdown table {
+  display: block; width: max-content; max-width: 100%; overflow-x: auto;
+  border-collapse: collapse; margin: 0 0 .5rem; font-size: .86rem;
+}
+.msg-markdown th, .msg-markdown td { border: 1px solid var(--border); padding: .3rem .5rem; text-align: left; }
+.msg-markdown th { background: var(--panel-2); }
+.msg-markdown img { max-width: 100%; height: auto; }
+/* Mermaid diagrams (`<figure>` around the engine's inline SVG; the raw-source
+   `<pre class="mermaid">` fallback is covered by the pre rule above) and block
+   math scroll horizontally like tables — the engine emits these classes as
+   styling hooks and relies on the host sheet for the overflow behaviour. */
+.msg-markdown figure.catalerum-mermaid { margin: 0 0 .5rem; overflow-x: auto; }
+.msg-markdown figure.catalerum-mermaid svg { display: block; }
+.msg-markdown .catalerum-math-block { overflow-x: auto; text-align: center; margin: 0 0 .5rem; }
+.chat-input {
+  position: relative; /* anchors the slash-command menu */
+  display: flex; flex-direction: column; gap: .5rem; padding: .6rem 1rem;
+  border-top: 1px solid var(--border); background: var(--panel);
+}
+.chat-input-row { display: flex; gap: .5rem; align-items: stretch; }
+/* Slash-command menu (SOUL §12/§23): floats above the whole composer block while
+   the draft spells a command, so attachment chips never shift it. */
+.chat-slash-menu {
+  position: absolute; left: 1rem; right: 1rem; bottom: calc(100% + .25rem); z-index: 30;
+  display: flex; flex-direction: column; padding: .25rem; max-height: 14rem; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.5);
+}
+.chat-slash-item {
+  display: flex; gap: .6rem; align-items: baseline; min-width: 0;
+  border: 0; border-radius: 6px; background: transparent; text-align: left;
+  padding: .4rem .55rem; font: inherit; font-size: .85rem; color: var(--fg); cursor: pointer;
+}
+.chat-slash-item-active { background: var(--user); }
+.chat-slash-name {
+  flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+}
+.chat-slash-desc {
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Tool-guard approval prompt (SOUL §19) — shown above the composer while a
+   guarded tool call is paused awaiting the user's decision. */
+.chat-approval {
+  margin: 0 1rem .5rem; padding: .6rem .8rem; border-radius: 10px;
+  border: 1px solid var(--accent); background: var(--panel-2);
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.chat-approval-head { display: flex; align-items: baseline; gap: .5rem; }
+.chat-approval-title { font-weight: 600; color: var(--fg); }
+.chat-approval-tool {
+  font-family: var(--mono, monospace); color: var(--accent);
+  background: var(--panel); padding: .05rem .35rem; border-radius: 6px;
+}
+.chat-approval-reason { color: var(--muted); font-size: .88rem; }
+.chat-approval-args {
+  margin: 0; padding: .4rem .5rem; border-radius: 6px; overflow-x: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  font-family: var(--mono, monospace); font-size: .8rem; color: var(--fg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.chat-approval-actions { display: flex; gap: .5rem; }
+.chat-approval-approve {
+  border: 1px solid var(--accent-2); background: var(--accent-2);
+  color: var(--on-accent); border-radius: 8px; padding: .35rem .9rem; cursor: pointer;
+}
+.chat-approval-approve:hover { filter: brightness(1.08); }
+.chat-approval-reject {
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--fg); border-radius: 8px; padding: .35rem .9rem; cursor: pointer;
+}
+.chat-approval-reject:hover { border-color: var(--accent); color: var(--accent); }
+
+/* `ask_user` question form (SOUL §7/§12) — shown above the composer while the
+   assistant is waiting on the user's answers. */
+.chat-questions-wrap {
+  margin: 0 1rem .5rem; padding: .6rem .8rem; border-radius: 10px;
+  border: 1px solid var(--accent); background: var(--panel-2);
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.chat-questions-head { font-weight: 600; color: var(--fg); }
+.chat-questions { display: flex; flex-direction: column; gap: .5rem; }
+.chat-questions-body { display: flex; flex-direction: column; gap: .7rem; }
+.chat-question { display: flex; flex-direction: column; gap: .35rem; }
+.chat-question-text-label { color: var(--fg); font-size: .92rem; }
+.chat-question-opts { display: flex; flex-direction: column; gap: .25rem; }
+.chat-question-opt {
+  display: flex; align-items: center; gap: .5rem; cursor: pointer;
+  color: var(--fg); font-size: .9rem;
+}
+.chat-question-opt input { accent-color: var(--accent); }
+.chat-question-text {
+  resize: vertical; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .4rem .5rem;
+  font: inherit; font-size: .9rem;
+}
+.chat-questions-actions { display: flex; justify-content: flex-end; }
+.chat-questions-submit {
+  border: 1px solid var(--accent-2); background: var(--accent-2);
+  color: var(--on-accent); border-radius: 8px; padding: .35rem .9rem; cursor: pointer;
+}
+.chat-questions-submit:hover { filter: brightness(1.08); }
+.chat-textarea {
+  flex: 1; resize: none; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .5rem .6rem;
+  font: inherit; font-size: .92rem;
+}
+.chat-textarea:focus { outline: none; border-color: var(--accent); }
+.chat-send {
+  align-self: stretch; min-width: 64px; background: var(--accent-2); color: var(--on-accent);
+  border: 0; border-radius: 8px; padding: 0 1rem; font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+.chat-send:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; }
+/* Stop-generating button (SOUL §12): shown beside Send while a turn streams. */
+.chat-stop {
+  align-self: stretch; min-width: 64px; background: var(--panel-2); color: var(--err-fg);
+  border: 1px solid var(--err-border); border-radius: 8px; padding: 0 .8rem;
+  font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.chat-stop:hover { background: var(--err); }
+.chat-stop:disabled { color: var(--muted); border-color: var(--border); cursor: default; background: var(--panel-2); }
+/* A user message sent while a turn was streaming, not yet placed into the
+   conversation: dimmed + dashed until the server's ack lands. */
+.msg-queued .msg-text { opacity: .6; border-style: dashed; }
+.msg-queued-tag {
+  margin-left: .4rem; font-size: .58rem; font-weight: 700; letter-spacing: .3px;
+  color: var(--muted); background: var(--panel-2); border: 1px dashed var(--border);
+  border-radius: 4px; padding: .02rem .3rem; cursor: help;
+}
+/* Uploaded files shown on top of a sent message bubble: image thumbnails and
+   labelled download chips, above the message text. */
+.msg-attachments { display: flex; flex-wrap: wrap; gap: .4rem; margin: .1rem 0 .15rem; }
+.msg-attachment { display: inline-flex; align-items: center; gap: .35rem; text-decoration: none; color: var(--fg); }
+.msg-attachment-img {
+  max-width: 12rem; max-height: 9rem; border-radius: 8px;
+  border: 1px solid var(--border); object-fit: cover; display: block;
+}
+.msg-attachment-link, .msg-attachment-unsafe {
+  max-width: 18rem; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: .15rem .7rem; font-size: .82rem;
+}
+.msg-attachment-link:hover { border-color: var(--accent); }
+.msg-attachment-icon { opacity: .8; }
+.msg-attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Staged chat attachments (uploaded; sent as references). */
+.chat-attachments { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chat-attachment-chip {
+  display: inline-flex; align-items: center; gap: .35rem; max-width: 18rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: .15rem .25rem .15rem .65rem; font-size: .82rem; color: var(--fg);
+}
+.chat-attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.15rem; height: 1.15rem; border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted); cursor: pointer; font-size: .95rem; line-height: 1;
+}
+.chat-attachment-remove:hover { background: var(--border); color: var(--fg); }
+.chat-attach-status { font-size: .82rem; color: var(--muted); }
+.chat-attach-error { font-size: .82rem; color: var(--err-fg); }
+.chat-attach-btn {
+  align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 42px; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 1.05rem;
+}
+.chat-attach-btn:hover { border-color: var(--accent); }
+/* Microphone dictation button (SOUL §7): shown only when the gateway offers STT
+   models. Turns red and pulses while recording; disabled while transcribing. */
+.chat-mic {
+  align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 42px; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 1.05rem;
+}
+.chat-mic:hover:not(:disabled) { border-color: var(--accent); }
+.chat-mic:disabled { color: var(--muted); cursor: default; }
+.chat-capability-checking:disabled { cursor: progress; }
+.chat-mic-recording {
+  color: var(--on-accent); background: var(--err); border-color: var(--err-border);
+  animation: chat-mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes chat-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--err-border); }
+  50% { box-shadow: 0 0 0 4px transparent; }
+}
+

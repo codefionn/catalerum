@@ -420,7 +420,7 @@ async fn set_storage_settings(
     // default the resolver can't serve would silently break every bare op.
     // Clearing (None) is always allowed (falls back to the `[storage]` default).
     if let Some(name) = store {
-        crate::routes::storage::resolve(&state, p.workspace_id, None, Some(name))
+        crate::object_service::resolve(&state, p.workspace_id, None, Some(name))
             .await
             .map_err(|_| {
                 ApiError::bad_request(format!(

@@ -1,0 +1,95 @@
+/* --- Notes panel (M3) — shared `.pane-*` chrome + notes-only row badges --- */
+.notes-item-agent {
+  font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--ok-fg); background: var(--panel); border: 1px solid var(--ok-border);
+  border-radius: 4px; padding: 0 .3rem; flex-shrink: 0;
+}
+.notes-item-tags { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .1rem; }
+.notes-item-tag {
+  font-size: .64rem; color: var(--muted); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 .3rem;
+}
+/* Tag filter bar above the notes list. */
+.notes-tagbar {
+  display: flex; flex-wrap: wrap; gap: .3rem; padding: .4rem .5rem;
+  border-bottom: 1px solid var(--border);
+}
+.notes-tag-chip {
+  font-size: .7rem; color: var(--muted); background: transparent;
+  border: 1px solid var(--border); border-radius: 999px; padding: .1rem .55rem; cursor: pointer;
+}
+.notes-tag-chip:hover { color: var(--fg); background: var(--panel-2); }
+.notes-tag-chip-active { color: var(--on-accent); background: var(--accent-2); border-color: var(--accent-2); }
+.notes-form { flex: 1; display: flex; flex-direction: column; gap: .6rem; padding: 1rem; min-height: 0; }
+.notes-input {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .55rem .7rem; font: inherit;
+}
+.notes-input:focus { outline: none; border-color: var(--accent); }
+.notes-input-title { font-size: 1.05rem; font-weight: 700; }
+.notes-input-tags { font-size: .85rem; }
+.notes-toolbar {
+  display: flex; flex-wrap: wrap; gap: .35rem; align-items: center;
+  padding: .15rem 0 .05rem;
+}
+.notes-tool {
+  width: 2rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.notes-tool:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.notes-tool:disabled { color: var(--muted); cursor: not-allowed; }
+.notes-tool-italic { font-style: italic; }
+.notes-wysiwyg { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; }
+.notes-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.notes-pane-label {
+  color: var(--muted); font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px;
+}
+.notes-textarea {
+  flex: 1; min-height: 12rem; resize: none; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .6rem .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; line-height: 1.5;
+}
+.notes-textarea:focus { outline: none; border-color: var(--accent); }
+.notes-preview {
+  flex: 1; min-height: 12rem; overflow: auto; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .75rem .85rem;
+  line-height: 1.55; overflow-wrap: anywhere;
+}
+.notes-preview h1, .notes-preview h2, .notes-preview h3,
+.notes-preview h4, .notes-preview h5, .notes-preview h6 {
+  margin: 0 0 .7rem; line-height: 1.2;
+}
+.notes-preview h1 { font-size: 1.35rem; }
+.notes-preview h2 { font-size: 1.14rem; }
+.notes-preview h3 { font-size: 1rem; }
+.notes-preview h4 { font-size: .92rem; }
+.notes-preview h5 { font-size: .85rem; }
+.notes-preview h6 { font-size: .85rem; color: var(--muted); }
+.notes-preview p, .notes-preview ul, .notes-preview ol, .notes-preview blockquote, .notes-preview pre {
+  margin: 0 0 .75rem;
+}
+.notes-preview ul, .notes-preview ol { padding-left: 1.25rem; }
+.notes-preview li { margin: .18rem 0; }
+.notes-preview li > ul, .notes-preview li > ol { margin: .18rem 0 0; }
+.notes-preview hr { border: 0; border-top: 1px solid var(--border); margin: .9rem 0; }
+.notes-preview blockquote {
+  border-left: 3px solid var(--accent-2); padding-left: .7rem; color: var(--fg);
+}
+.notes-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 5px; padding: .05rem .3rem; font-size: .85em;
+}
+.notes-preview pre {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .7rem; overflow-x: auto;
+}
+.notes-preview pre code { background: transparent; border: 0; padding: 0; }
+.notes-preview a { color: var(--accent); }
+.notes-preview-empty { color: var(--muted); }
+/* Markdown source shown while the worker renders it (components/markdown.rs). */
+.md-pending { white-space: pre-wrap; overflow-wrap: anywhere; }
+.notes-form-error { color: var(--err-fg); font-size: .85rem; }
+.notes-form-actions { display: flex; gap: .5rem; }
+

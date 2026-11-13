@@ -1,0 +1,60 @@
+/* --- Graph panel (SOUL §6.3 explorer) --- */
+.graph-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.graph-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.graph-header-titles { display: flex; flex-direction: column; gap: .15rem; flex-shrink: 0; }
+.graph-title { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.graph-subtitle { color: var(--muted); font-size: .82rem; }
+.graph-subtitle code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+.graph-form { display: flex; flex-direction: column; gap: .5rem; flex: 1; max-width: 720px; }
+.graph-cypher {
+  min-height: 4.5rem; resize: vertical; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .55rem .65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5;
+}
+.graph-cypher:focus { outline: none; border-color: var(--accent); }
+.graph-form-actions { display: flex; }
+.graph-btn {
+  background: var(--accent-2); color: var(--on-accent); border: 1px solid var(--accent-2);
+  border-radius: 7px; padding: .4rem 1rem; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.graph-btn:hover:not(:disabled) { background: var(--accent); }
+.graph-btn:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; border-color: var(--border); }
+.graph-body { flex: 1; min-height: 0; overflow: auto; padding: 1rem; }
+.graph-status { color: var(--muted); padding: 1rem 0; font-size: .9rem; }
+.graph-error { color: var(--err-fg); }
+.graph-result-meta { color: var(--muted); font-size: .8rem; margin-bottom: .5rem; }
+.graph-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.graph-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.graph-table thead th {
+  text-align: left; color: var(--accent); font-size: .72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px; padding: .45rem .6rem;
+  border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0;
+}
+.graph-table tbody td {
+  padding: .4rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+  max-width: 32rem; overflow-wrap: anywhere;
+}
+.graph-table tbody tr:hover { background: var(--panel); }
+.graph-cell-node {
+  font: inherit; text-align: left; color: var(--accent); background: none;
+  border: none; padding: 0; cursor: pointer; overflow-wrap: anywhere;
+}
+.graph-cell-node:hover { text-decoration: underline; }
+.graph-detail {
+  margin-top: .8rem; border: 1px solid var(--accent-2); border-radius: 8px;
+  background: var(--panel); padding: .6rem .7rem;
+}
+.graph-detail-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .4rem; }
+.graph-detail-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.graph-detail-fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.graph-field {
+  display: grid; grid-template-columns: minmax(6rem, 14rem) 1fr; gap: .6rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+}
+.graph-field-key { color: var(--accent); font-weight: 600; overflow-wrap: anywhere; }
+.graph-field-val { overflow-wrap: anywhere; white-space: pre-wrap; }
+

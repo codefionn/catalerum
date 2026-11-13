@@ -3,7 +3,7 @@
 //!
 //! For every [`watch`](crate::config::StorageBackendConfig::watch)-enabled store
 //! (config or runtime, across all workspaces) this worker runs
-//! [`scan_store`](crate::routes::storage::scan_store) to reconcile the catalogue
+//! [`scan_store`](crate::object_service::scan_store) to reconcile the catalogue
 //! with the backend: new/changed files are catalogued + ingested, vanished ones are
 //! purged. **Local** stores additionally get a real-time inotify watcher
 //! (mirroring `catalerum-calendar`'s `watch_dir`) that triggers a prompt,
@@ -30,7 +30,7 @@ use tracing::{info, warn};
 use catalerum_core::model::ConnectionKind;
 use catalerum_core::WorkspaceId;
 
-use crate::routes::storage::{resolve, runtime_watch, scan_store, ScanEvents};
+use crate::object_service::{resolve, runtime_watch, scan_store, ScanEvents};
 use crate::state::AppState;
 
 /// Coalesce a burst of filesystem events into a single re-scan (an editor save can

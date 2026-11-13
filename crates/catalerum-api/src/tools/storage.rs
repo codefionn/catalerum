@@ -29,7 +29,7 @@ impl CopyObjectTool {
         let from_key =
             str_arg("from_key").ok_or_else(|| Error::invalid("`from_key` is required"))?;
         let to_key = str_arg("to_key").unwrap_or(from_key);
-        let object = crate::routes::storage::copy_object_between(
+        let object = crate::object_service::copy_object_between(
             &self.storage,
             &self.store,
             ws,
@@ -247,7 +247,7 @@ impl Tool for DownloadLinkTool {
 
         // Resolve the store now so the claim can pin its *resolved* name — the redeem
         // route has no acting user, so it can't re-run per-user default resolution.
-        let handle = crate::routes::storage::resolve_store(
+        let handle = crate::object_service::resolve_store(
             &self.storage,
             &self.store,
             ws,
@@ -272,7 +272,7 @@ impl Tool for DownloadLinkTool {
             let (total, n) = self.measure_dir(ws, &handle, &prefix_slash).await?;
             (true, total, n, prefix_slash)
         } else {
-            crate::routes::storage::validate_object_key(&trimmed)
+            crate::object_service::validate_object_key(&trimmed)
                 .map_err(|e| Error::invalid(e.to_string()))?;
             let physical = handle.physical_key(ws, &trimmed);
             match handle.backend.stat(&physical).await {
@@ -335,7 +335,7 @@ pub(crate) fn register_download_link_tool(
 /// it (SOUL §9). Deleting is a `storage:write` op (consistent with the API gating no
 /// handler on `Delete`), reconciling the catalogue + §10 index + labels + firing the
 /// `StorageObject` "deleted" trigger for each removed file through the shared
-/// [`delete_object_at`](crate::routes::storage::delete_object_at) core the DELETE
+/// [`delete_object_at`](crate::object_service::delete_object_at) core the DELETE
 /// route uses. Holds the [`StorageRegistry`] + [`Store`] to resolve the target store
 /// (config or runtime, honouring the caller's default) exactly like `copy_object`.
 pub(crate) struct DeleteObjectTool {
@@ -388,7 +388,7 @@ impl Tool for DeleteObjectTool {
         if key.is_empty() {
             return Err(Error::invalid("`key` must not be empty"));
         }
-        let handle = crate::routes::storage::resolve_store(
+        let handle = crate::object_service::resolve_store(
             &self.storage,
             &self.store,
             ws,
@@ -404,7 +404,7 @@ impl Tool for DeleteObjectTool {
             // at 1000 files per call; `truncated` tells the caller to repeat for the rest.
             let prefix_slash = format!("{key}/");
             let (keys, truncated) =
-                crate::routes::storage::list_object_keys(&handle, ws, &prefix_slash)
+                crate::object_service::list_object_keys(&handle, ws, &prefix_slash)
                     .await
                     .map_err(|e| Error::other(e.to_string()))?;
             if keys.is_empty() {
@@ -415,7 +415,7 @@ impl Tool for DeleteObjectTool {
             let mut deleted = 0usize;
             let mut errors = Vec::new();
             for k in &keys {
-                match crate::routes::storage::delete_object_at(&self.store, &handle, ws, k).await {
+                match crate::object_service::delete_object_at(&self.store, &handle, ws, k).await {
                     Ok(_) => deleted += 1,
                     Err(e) => errors.push(json!({ "key": k, "error": e.to_string() })),
                 }
@@ -431,7 +431,7 @@ impl Tool for DeleteObjectTool {
         }
 
         // Single file (idempotent — an absent key still succeeds).
-        crate::routes::storage::delete_object_at(&self.store, &handle, ws, &key)
+        crate::object_service::delete_object_at(&self.store, &handle, ws, &key)
             .await
             .map_err(|e| Error::other(e.to_string()))?;
         Ok(json!({ "kind": "file", "key": key, "store": handle.store, "deleted": 1 }))
@@ -441,7 +441,7 @@ impl Tool for DeleteObjectTool {
 /// `create_directory` — make a new (empty) directory in a files store (SOUL §9).
 /// Object stores have no real directories (a folder is only the shared prefix of the
 /// keys inside it), so this writes a hidden `.keep` placeholder — **uncatalogued**,
-/// via [`create_directory`](crate::routes::storage::create_directory) — to give an
+/// via [`create_directory`](crate::object_service::create_directory) — to give an
 /// otherwise-empty folder a presence in the Files tree. Holds the [`StorageRegistry`]
 /// + [`Store`] to resolve the target store like `copy_object`/`delete_object`.
 pub(crate) struct CreateDirectoryTool {
@@ -487,7 +487,7 @@ impl Tool for CreateDirectoryTool {
         if dir.is_empty() {
             return Err(Error::invalid("`path` must not be empty"));
         }
-        let (store, marker) = crate::routes::storage::create_directory(
+        let (store, marker) = crate::object_service::create_directory(
             &self.storage,
             &self.store,
             ws,
@@ -537,7 +537,7 @@ pub(crate) const MAX_WRITE_OBJECT_BYTES: usize = 16 * 1024 * 1024;
 /// (§29 "Per-App durable state" recorded the gap). Text goes in `content`,
 /// binary in `content_base64`; the write is catalogued + §10-ingested + fires
 /// the `StorageObject` trigger exactly like an upload, via the shared
-/// [`write_object_bytes`](crate::routes::storage::write_object_bytes) core (the
+/// [`write_object_bytes`](crate::object_service::write_object_bytes) core (the
 /// `text_to_speech` sink). Idempotent by `(store, key)` — a re-run overwrites
 /// the same object — which is why the `WriteObject` automation action is safe
 /// to re-run on a collect redelivery (SOUL §11/§29).
@@ -613,7 +613,7 @@ impl Tool for WriteObjectTool {
                 MAX_WRITE_OBJECT_BYTES
             )));
         }
-        let object = crate::routes::storage::write_object_bytes(
+        let object = crate::object_service::write_object_bytes(
             &self.storage,
             &self.store,
             ws,
@@ -634,8 +634,8 @@ impl Tool for WriteObjectTool {
 }
 
 /// `move_object` — relocate a stored file (SOUL §9/§11): a
-/// [`copy_object_between`](crate::routes::storage::copy_object_between) to the
-/// destination, then a [`delete_object_at`](crate::routes::storage::delete_object_at)
+/// [`copy_object_between`](crate::object_service::copy_object_between) to the
+/// destination, then a [`delete_object_at`](crate::object_service::delete_object_at)
 /// of the source (object stores have no rename primitive). Both halves reconcile the
 /// catalogue/index like their standalone tools, so search follows the file. Gated
 /// `storage:write` like `copy_object`/`delete_object`: a move never destroys content
@@ -683,7 +683,7 @@ impl Tool for MoveObjectTool {
         let to_key = opt_str_some(&args, "to_key").unwrap_or_else(|| from_key.clone());
         // Land the copy first (`copy_object_between` refuses a same-object move,
         // so the delete below can never be deleting the freshly-written copy).
-        let object = crate::routes::storage::copy_object_between(
+        let object = crate::object_service::copy_object_between(
             &self.storage,
             &self.store,
             ws,
@@ -696,7 +696,7 @@ impl Tool for MoveObjectTool {
         // Then remove the source. A failure here is surfaced as an error — but the
         // copy HAS landed, so the message says so and a retry (the delete is
         // idempotent, the copy overwrites in place) completes the move.
-        let src = crate::routes::storage::resolve_store(
+        let src = crate::object_service::resolve_store(
             &self.storage,
             &self.store,
             ws,
@@ -705,7 +705,7 @@ impl Tool for MoveObjectTool {
         )
         .await
         .map_err(|e| Error::other(e.to_string()))?;
-        crate::routes::storage::delete_object_at(&self.store, &src, ws, &from_key)
+        crate::object_service::delete_object_at(&self.store, &src, ws, &from_key)
             .await
             .map_err(|e| {
                 Error::other(format!(

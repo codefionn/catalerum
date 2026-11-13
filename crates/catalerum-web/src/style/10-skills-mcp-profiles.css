@@ -1,0 +1,205 @@
+/* --- Skills panel (SOUL §23 manager; also hosts Profiles) — shared `.pane-*`
+   chrome + the skills-only origin tag --- */
+.skills-tag {
+  font-size: .65rem; color: var(--accent); background: var(--panel);
+  border: 1px solid var(--accent-2); border-radius: 4px; padding: 0 .3rem;
+  text-transform: uppercase; letter-spacing: .4px; font-weight: 700;
+}
+.skills-form { flex: 1; display: flex; flex-direction: column; gap: .6rem; padding: 1rem; min-height: 0; overflow-y: auto; }
+.skills-input {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .55rem .7rem; font: inherit;
+}
+.skills-input:focus { outline: none; border-color: var(--accent); }
+.skills-input:disabled { color: var(--muted); }
+.skills-input-name { font-size: 1.05rem; font-weight: 700; }
+.skills-textarea {
+  min-height: 9rem; resize: vertical; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .6rem .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; line-height: 1.5;
+}
+.skills-textarea:focus { outline: none; border-color: var(--accent); }
+.skills-textarea-code { min-height: 7rem; }
+.skills-code {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .7rem; border: 1px dashed var(--border); border-radius: 8px;
+}
+.skills-check { display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+.skills-check input { width: 1rem; height: 1rem; flex: none; }
+.skills-form-error { color: var(--err-fg); font-size: .85rem; }
+.skills-form-actions { display: flex; gap: .5rem; }
+/* Skills read view — the rendered skill card shown before editing. */
+.skills-view {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .9rem;
+  padding: 1rem; min-height: 0; overflow-y: auto;
+}
+.skills-view-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.skills-view-name { margin: 0; font-size: 1.2rem; font-weight: 700; word-break: break-word; }
+.skills-view-desc { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.skills-section { display: flex; flex-direction: column; gap: .4rem; }
+.skills-section-label {
+  display: flex; align-items: center; gap: .5rem; font-size: .72rem; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
+}
+.skills-view-muted { margin: 0; color: var(--muted); font-size: .85rem; font-style: italic; }
+.skills-view-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.skills-chip {
+  display: inline-flex; align-items: center; padding: .15rem .55rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+}
+.skills-view-md { min-height: 0; }
+.skills-code-badge {
+  padding: .05rem .4rem; background: var(--accent-2); color: var(--on-accent); border-radius: 5px;
+  font-size: .68rem; font-weight: 700; text-transform: none; letter-spacing: .3px;
+}
+.skills-code-entry {
+  color: var(--muted); font-size: .72rem; text-transform: none; letter-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.skills-codeblock {
+  margin: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .7rem .8rem; overflow-x: auto; white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5;
+}
+.skills-codeblock code { font-family: inherit; }
+
+/* --- MCP Endpoints panel (SOUL §30) — a two-pane manager mirroring Skills: a
+   searchable endpoint list + a read-then-edit detail pane that also surfaces the
+   connect URL and a mint-a-share-link action. Reuses the shared `.pane-*`
+   chrome, `.pf-*` form fields, `.mcp-url*` URL row, and `.list-drawer*` mobile
+   drawer; endpoint names run long, so the list pane is wider. --- */
+.mcpe-list { width: 300px; }
+.mcpe-tag {
+  font-size: .65rem; color: var(--muted); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 .3rem;
+  text-transform: uppercase; letter-spacing: .4px; font-weight: 700;
+}
+.mcpe-view, .mcpe-form {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  padding: 1rem; min-height: 0; overflow-y: auto;
+}
+.mcpe-view { gap: .9rem; }
+.mcpe-form { gap: .6rem; }
+.mcpe-view-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.mcpe-view-name {
+  margin: 0; font-size: 1.2rem; font-weight: 700; word-break: break-word;
+  display: flex; align-items: center; gap: .5rem;
+}
+.mcpe-view-desc { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.mcpe-status-badge {
+  font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  border-radius: 999px; padding: .1rem .5rem; border: 1px solid var(--border);
+}
+.mcpe-status-on { color: var(--accent); border-color: var(--accent-2); }
+.mcpe-status-off { color: var(--muted); }
+.mcpe-section { display: flex; flex-direction: column; gap: .4rem; }
+.mcpe-section-label {
+  font-size: .72rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .6px;
+}
+.mcpe-muted { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.4; }
+.mcpe-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.mcpe-chip {
+  display: inline-flex; align-items: center; padding: .15rem .55rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+}
+.mcpe-notice {
+  font-size: .8rem; line-height: 1.45; color: var(--fg); display: flex; flex-direction: column; gap: .4rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: .55rem .7rem;
+}
+.mcpe-input {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .55rem .7rem; font: inherit;
+}
+.mcpe-input:focus { outline: none; border-color: var(--accent); }
+.mcpe-input:disabled { color: var(--muted); }
+.mcpe-input-name { font-size: 1.05rem; font-weight: 700; }
+.mcpe-check { display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+.mcpe-check input { width: 1rem; height: 1rem; flex: none; }
+.mcpe-textarea {
+  min-height: 14rem; resize: vertical; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px; padding: .6rem .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5;
+}
+.mcpe-textarea:focus { outline: none; border-color: var(--accent); }
+.mcpe-codeblock {
+  margin: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .7rem .8rem; overflow-x: auto; white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; line-height: 1.5;
+}
+.mcpe-codeblock code { font-family: inherit; }
+.mcpe-form-error { color: var(--err-fg); font-size: .85rem; }
+.mcpe-form-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* --- Profiles panel: labeled pickers (model / tools / skills / grant) --- */
+.pf-group-title {
+  font-size: .72rem; font-weight: 700; color: var(--accent); text-transform: uppercase;
+  letter-spacing: .6px; margin: .7rem 0 -.1rem; padding-bottom: .25rem;
+  border-bottom: 1px solid var(--border);
+}
+.pf-group-title:first-child { margin-top: 0; }
+.pf-field { display: flex; flex-direction: column; gap: .25rem; }
+.pf-label { font-size: .82rem; font-weight: 600; color: var(--fg); }
+.pf-help { font-size: .72rem; color: var(--muted); line-height: 1.35; }
+.pf-select { cursor: pointer; }
+.pf-empty {
+  font-size: .8rem; color: var(--muted); font-style: italic;
+  padding: .4rem .1rem;
+}
+/* Checklist: a scroll-bounded grid of checkboxes over a catalog. */
+.pf-checklist {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .15rem .6rem;
+  max-height: 12rem; overflow-y: auto; padding: .5rem .6rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.pf-check { display: flex; align-items: flex-start; gap: .45rem; padding: .2rem .1rem; cursor: pointer; }
+.pf-check:hover .pf-check-name { color: var(--accent); }
+.pf-check-box { margin-top: .15rem; accent-color: var(--accent-2); cursor: pointer; flex: none; }
+.pf-check-text { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.pf-check-name { font-size: .85rem; word-break: break-word; }
+.pf-check-hint {
+  font-size: .7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Chips: removable tags + an inline add input (channels, tools fallback). */
+.pf-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  padding: .4rem .5rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.pf-chip {
+  display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem;
+  background: var(--user); border: 1px solid var(--accent-2); border-radius: 999px; padding: .1rem .25rem .1rem .6rem;
+}
+.pf-chip-x {
+  display: inline-flex; align-items: center; justify-content: center; width: 1.1rem; height: 1.1rem;
+  background: transparent; color: var(--muted); border: 0; border-radius: 50%;
+  font-size: .7rem; line-height: 1; cursor: pointer;
+}
+.pf-chip-x:hover:not(:disabled) { color: var(--err-fg); background: rgba(0,0,0,.25); }
+.pf-chip-input {
+  flex: 1; min-width: 9rem; background: transparent; color: var(--fg); border: 0;
+  padding: .2rem .1rem; font: inherit; font-size: .85rem;
+}
+.pf-chip-input:focus { outline: none; }
+
+/* Autocomplete combobox: the shared model/voice picker (SOUL §12) — a text input
+   that filters a catalog as you type and floats a clickable suggestion list. The
+   list is teleported to <body> with `position: fixed` (coords measured from the
+   input, supplied inline) so it escapes the `overflow` clip of whichever scroll
+   panel hosts the picker; z-index sits above the settings overlay (50). */
+.ac-wrap { position: relative; }
+.ac-wrap > input { width: 100%; }
+.ac-list {
+  position: fixed; z-index: 60;
+  margin: 0; padding: .25rem; list-style: none; max-height: 14rem; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.5);
+}
+.ac-item {
+  padding: .4rem .55rem; border-radius: 6px; font-size: .85rem; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ac-item:hover, .ac-item-active { background: var(--user); }
+.ac-item-current { color: var(--accent); }
+

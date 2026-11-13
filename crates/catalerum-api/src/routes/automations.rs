@@ -36,7 +36,6 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use catalerum_automation::graph::Graph;
 use catalerum_automation::{NodeDoc, Trigger};
 use catalerum_core::capability::{Action, Capability, Resource};
 use catalerum_core::id::AutomationRunId;
@@ -47,6 +46,7 @@ use catalerum_store::NewAutomation;
 use crate::auth::Auth;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+use crate::tools::compile_automation_triggers;
 
 /// Mount the automation routes.
 pub fn router() -> Router<AppState> {
@@ -125,18 +125,6 @@ fn clean_name(raw: &str) -> ApiResult<String> {
     Ok(name.to_string())
 }
 
-/// Reject a malformed spec (`400`) before persisting — unknown trigger/action
-/// `kind`, a missing required field, or empty trigger/action lists (SOUL §11).
-fn validate_spec(
-    triggers: &[Value],
-    condition: Option<&Value>,
-    actions: &[Value],
-) -> ApiResult<()> {
-    catalerum_automation::AutomationSpec::from_json(triggers, condition, actions)
-        .map(|_| ())
-        .map_err(|e| ApiError::bad_request(format!("invalid automation: {e}")))
-}
-
 /// The capabilities an automation's **collect** triggers demand of their author
 /// (SOUL §11/§19): one `email:read@<connection>` / `calendar:read@<connection>`
 /// per `CollectEmail`/`CollectCalendar` trigger — the same capability the poll
@@ -197,38 +185,6 @@ fn require_collect_authority(caps: &[Capability], triggers: &[Value]) -> ApiResu
     Ok(())
 }
 
-/// Compile a node-graph automation's stored `triggers` column from its `spec`
-/// (SOUL §11 Phase A). When `spec` carries a `"graph"` key, the request is a
-/// **graph** automation: parse + [`Graph::validate`] it (`400` on failure), then
-/// return the **compiled** triggers — each graph Trigger node's [`Trigger`] as JSON
-/// — so the existing dispatch matching (which keys on the `triggers` column) still
-/// fires the automation. The graph itself is round-tripped verbatim in `spec`; the
-/// `triggers` column is its compiled dispatch shadow (the executor runs the graph,
-/// not these triggers). Returns:
-/// - `Some(Ok(triggers))` — a valid graph; persist these compiled triggers.
-/// - `Some(Err(..))` — a present-but-invalid graph (a `400`).
-/// - `None` — no graph (a legacy linear automation; persist the request as-is).
-///
-/// [`Trigger`]: catalerum_automation::Trigger
-fn compile_graph_triggers(spec: Option<&Value>) -> Option<ApiResult<Vec<Value>>> {
-    let parsed = Graph::from_spec(spec)?;
-    Some((|| {
-        let graph =
-            parsed.map_err(|e| ApiError::bad_request(format!("invalid automation graph: {e}")))?;
-        graph
-            .validate()
-            .map_err(|e| ApiError::bad_request(format!("invalid automation graph: {e}")))?;
-        // The graph compiled fine; turn each Trigger node into a stored trigger JSON
-        // value. `serde_json::to_value` of a `Trigger` cannot fail (it is a plain
-        // tagged enum), so the unwrap is total.
-        Ok(graph
-            .trigger_specs()
-            .iter()
-            .map(|t| serde_json::to_value(t).unwrap_or(Value::Null))
-            .collect())
-    })())
-}
-
 async fn list(State(state): State<AppState>, auth: Auth) -> ApiResult<Json<Vec<Automation>>> {
     let p = auth.principal();
     auth.require(Action::Read, "automation")?;
@@ -249,16 +205,15 @@ async fn create(
     auth.require(Action::Write, "automation")?;
     let name = clean_name(&body.name)?;
     // A graph automation (its `spec` carries a `"graph"`) compiles its dispatch
-    // `triggers` from the graph and skips the linear `validate_spec` (its `actions`
+    // `triggers` from the graph and skips the linear `AutomationSpec` check (its `actions`
     // are nodes, not the legacy column). A legacy automation is validated + stored
     // EXACTLY as before.
-    let triggers = match compile_graph_triggers(body.spec.as_ref()) {
-        Some(compiled) => compiled?,
-        None => {
-            validate_spec(&body.triggers, body.condition.as_ref(), &body.actions)?;
-            body.triggers
-        }
-    };
+    let triggers = compile_automation_triggers(
+        body.spec.as_ref(),
+        body.triggers,
+        body.condition.as_ref(),
+        &body.actions,
+    )?;
     // A Collect-headed automation requires the token's **effective** authority to
     // cover the collect capability for its connection (SOUL §11/§19) — checked on
     // the *compiled* triggers so graph and legacy shapes gate identically, and
@@ -325,13 +280,12 @@ async fn upsert(
     let name = clean_name(&name)?;
     // As in `create`: a graph automation compiles its dispatch `triggers` from the
     // graph (skipping the linear validation); a legacy automation is unchanged.
-    let triggers = match compile_graph_triggers(body.spec.as_ref()) {
-        Some(compiled) => compiled?,
-        None => {
-            validate_spec(&body.triggers, body.condition.as_ref(), &body.actions)?;
-            body.triggers
-        }
-    };
+    let triggers = compile_automation_triggers(
+        body.spec.as_ref(),
+        body.triggers,
+        body.condition.as_ref(),
+        &body.actions,
+    )?;
     // Same authoring gates as `create` (SOUL §11/§19 authority + §10/§28
     // connection existence), on the compiled triggers.
     require_collect_authority(&auth.capabilities(), &triggers)?;
@@ -764,15 +718,21 @@ mod tests {
     }
 
     #[test]
-    fn compile_graph_triggers_is_none_for_a_legacy_spec() {
-        // No spec / a non-graph spec → None (the legacy linear path runs unchanged).
-        assert!(compile_graph_triggers(None).is_none());
-        assert!(compile_graph_triggers(Some(&json!({ "note": "freeform" }))).is_none());
-        assert!(compile_graph_triggers(Some(&json!("scalar"))).is_none());
+    fn compile_triggers_passes_a_legacy_spec_through() {
+        // No spec / a non-graph spec → the legacy linear path: validated, and the
+        // request's triggers are stored unchanged.
+        let triggers = vec![json!({ "kind": "webhook", "path": "/h" })];
+        let actions = [json!({ "kind": "summarize" })];
+        for spec in [None, Some(json!({ "note": "freeform" })), Some(json!("scalar"))] {
+            let out =
+                compile_automation_triggers(spec.as_ref(), triggers.clone(), None, &actions)
+                    .unwrap();
+            assert_eq!(out, triggers);
+        }
     }
 
     #[test]
-    fn compile_graph_triggers_compiles_a_valid_graphs_trigger_nodes() {
+    fn compile_triggers_compiles_a_valid_graphs_trigger_nodes() {
         // A trigger node → an action node. The compiled `triggers` are the graph's
         // Trigger nodes serialized to JSON, so dispatch matching still fires.
         let spec = json!({ "graph": {
@@ -782,20 +742,20 @@ mod tests {
             ],
             "edges": [ { "from": "t", "to": "a" } ]
         }});
-        let triggers = compile_graph_triggers(Some(&spec)).unwrap().unwrap();
+        let triggers = compile_automation_triggers(Some(&spec), vec![], None, &[]).unwrap();
         assert_eq!(triggers.len(), 1);
         assert_eq!(triggers[0]["kind"], json!("webhook"));
         assert_eq!(triggers[0]["path"], json!("/h"));
     }
 
     #[test]
-    fn compile_graph_triggers_rejects_an_invalid_graph() {
+    fn compile_triggers_rejects_an_invalid_graph() {
         // A graph with no trigger node fails validation → a 400 (not stored).
         let no_trigger = json!({ "graph": {
             "nodes": [ { "id": "a", "kind": "action", "action": { "kind": "summarize" } } ],
             "edges": []
         }});
-        assert!(compile_graph_triggers(Some(&no_trigger)).unwrap().is_err());
+        assert!(compile_automation_triggers(Some(&no_trigger), vec![], None, &[]).is_err());
 
         // A cyclic graph fails validation too.
         let cyclic = json!({ "graph": {
@@ -805,25 +765,27 @@ mod tests {
             ],
             "edges": [ { "from": "t", "to": "a" }, { "from": "a", "to": "t" } ]
         }});
-        assert!(compile_graph_triggers(Some(&cyclic)).unwrap().is_err());
+        assert!(compile_automation_triggers(Some(&cyclic), vec![], None, &[]).is_err());
 
-        // A malformed graph value (unknown node kind) → Some(Err), not a silent skip.
+        // A malformed graph value (unknown node kind) → an error, not a silent skip.
         let malformed = json!({ "graph": { "nodes": [ { "id": "t", "kind": "nope" } ] } });
-        assert!(compile_graph_triggers(Some(&malformed)).unwrap().is_err());
+        assert!(compile_automation_triggers(Some(&malformed), vec![], None, &[]).is_err());
     }
 
     #[test]
-    fn validate_spec_rejects_an_invalid_schedule_cron() {
+    fn compile_triggers_rejects_an_invalid_schedule_cron() {
         // The REST create/update path validates the cron (via AutomationSpec), so a
         // `Schedule` automation that could never fire is a 400, not a stored row.
-        assert!(validate_spec(
-            &[json!({ "kind": "schedule", "cron": "0 9 * * *" })],
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "schedule", "cron": "0 9 * * *" })],
             None,
             &[json!({ "kind": "summarize" })],
         )
         .is_ok());
-        assert!(validate_spec(
-            &[json!({ "kind": "schedule", "cron": "every blue moon" })],
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "schedule", "cron": "every blue moon" })],
             None,
             &[json!({ "kind": "summarize" })],
         )
@@ -848,25 +810,37 @@ mod tests {
     }
 
     #[test]
-    fn validate_spec_enforces_the_typed_contract() {
+    fn compile_triggers_enforces_the_typed_contract() {
         // A well-formed spec passes.
-        assert!(validate_spec(
-            &[json!({ "kind": "schedule", "cron": "0 9 * * *" })],
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "schedule", "cron": "0 9 * * *" })],
             None,
             &[json!({ "kind": "summarize" })],
         )
         .is_ok());
         // Empty triggers / empty actions / unknown kind / missing field all 400.
-        assert!(validate_spec(&[], None, &[json!({ "kind": "summarize" })]).is_err());
-        assert!(validate_spec(&[json!({ "kind": "webhook", "path": "/h" })], None, &[]).is_err());
-        assert!(validate_spec(
-            &[json!({ "kind": "telepathy" })],
+        assert!(
+            compile_automation_triggers(None, vec![], None, &[json!({ "kind": "summarize" })])
+                .is_err()
+        );
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "webhook", "path": "/h" })],
+            None,
+            &[]
+        )
+        .is_err());
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "telepathy" })],
             None,
             &[json!({ "kind": "summarize" })]
         )
         .is_err());
-        assert!(validate_spec(
-            &[json!({ "kind": "schedule" })],
+        assert!(compile_automation_triggers(
+            None,
+            vec![json!({ "kind": "schedule" })],
             None,
             &[json!({ "kind": "summarize" })]
         )
@@ -931,8 +905,7 @@ mod tests {
         }});
 
         // The create-handler logic: a present graph compiles its dispatch triggers.
-        let triggers = compile_graph_triggers(Some(&spec))
-            .expect("graph present")
+        let triggers = compile_automation_triggers(Some(&spec), vec![], None, &[])
             .expect("graph valid");
         assert_eq!(triggers.len(), 1, "one compiled trigger from the graph");
         assert_eq!(triggers[0]["kind"], json!("webhook"));

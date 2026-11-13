@@ -1,0 +1,167 @@
+/* --- Email panel (SOUL §28 read-only inbox) — three shared-chrome panes --- */
+/* Mailboxes rail (pane 1 of 3): a narrow `.pane-list`; on mobile it becomes a
+   left drawer toggled from the list header (same pattern as the chat sessions
+   drawer). */
+.email-mailboxes { width: 230px; }
+/* Backdrop behind the mobile mailboxes drawer; inert on desktop. */
+.email-mbx-scrim {
+  display: none; position: fixed; inset: 0; z-index: 59; background: var(--scrim);
+  border: 0; padding: 0; opacity: 0; pointer-events: none; transition: opacity .18s ease;
+}
+/* Message list (pane 2 of 3): a wide `.pane-list`. */
+.email-list { width: 320px; }
+.email-list-header { padding: .6rem .8rem; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: .5rem; }
+.email-list-titlebar { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.email-list-title {
+  margin: 0; flex: 1; min-width: 0; font-size: .95rem; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Opens the mailboxes drawer; hidden on desktop where the rail is always shown. */
+.email-mbx-toggle {
+  display: none; flex-shrink: 0; font: inherit; font-size: .82rem; color: var(--fg);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: .25rem .55rem; cursor: pointer;
+}
+.email-mbx-toggle:hover { border-color: var(--accent); }
+/* Account tree (SOUL §28): mailboxes grouped per synced account (connection),
+   each section expandable, every row carrying its unread-count pill. */
+.email-accounts {
+  flex: 1; min-height: 0; overflow-y: auto; padding: .5rem .5rem .7rem;
+  display: flex; flex-direction: column; gap: .1rem;
+}
+.email-account { display: flex; flex-direction: column; }
+.email-account-header {
+  display: flex; align-items: center; gap: .35rem; width: 100%;
+  background: transparent; color: var(--fg); border: none; border-radius: 6px;
+  padding: .3rem .4rem; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
+  text-align: left;
+}
+.email-account-header:hover { background: var(--panel-2); }
+.email-account-arrow { flex-shrink: 0; width: .9rem; color: var(--muted); font-size: .7rem; }
+.email-account-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email-account-mailboxes { list-style: none; margin: 0; padding: 0 0 .15rem; display: flex; flex-direction: column; gap: .05rem; }
+.email-mbx {
+  display: flex; align-items: center; gap: .4rem; width: 100%;
+  background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 6px;
+  padding: .25rem .4rem .25rem 1.6rem; font: inherit; font-size: .8rem; cursor: pointer;
+  text-align: left;
+}
+.email-mbx:hover { background: var(--panel-2); }
+.email-mbx-active { background: var(--panel-2); border-color: var(--accent-2); }
+.email-mbx-all { padding-left: .4rem; font-weight: 600; }
+.email-mbx-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email-badge {
+  flex-shrink: 0; margin-left: auto; background: var(--accent-2); color: var(--on-accent);
+  border-radius: 999px; padding: 0 .45rem; font-size: .68rem; font-weight: 700;
+  line-height: 1.35; font-variant-numeric: tabular-nums;
+}
+.email-filters { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.email-select, .email-input {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: .35rem .5rem; font: inherit; font-size: .82rem;
+}
+.email-select:focus, .email-input:focus { outline: none; border-color: var(--accent); }
+.email-input { flex: 1; min-width: 7rem; }
+.email-btn {
+  background: var(--accent-2); color: var(--on-accent); border: 1px solid var(--accent-2);
+  border-radius: 7px; padding: .35rem .7rem; font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer;
+}
+.email-btn:hover:not(:disabled) { background: var(--accent); }
+.email-btn:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; border-color: var(--border); }
+.email-status { color: var(--muted); padding: 1rem .8rem; font-size: .88rem; }
+.email-error { color: var(--err-fg); }
+.email-items { list-style: none; margin: 0; padding: .3rem; display: flex; flex-direction: column; gap: .15rem; }
+.email-item {
+  width: 100%; text-align: left; display: flex; flex-direction: column; gap: .2rem;
+  background: transparent; color: var(--fg); border: 1px solid transparent;
+  border-radius: 8px; padding: .5rem .6rem; cursor: pointer;
+}
+.email-item:hover { background: var(--panel-2); }
+.email-item-active { background: var(--panel-2); border-color: var(--accent-2); }
+.email-item-unread .email-item-subject { font-weight: 700; }
+.email-item-unread { border-left: 3px solid var(--accent); }
+.email-item-row1 { display: flex; align-items: baseline; justify-content: space-between; gap: .4rem; }
+.email-item-subject { flex: 1; min-width: 0; font-size: .9rem; word-break: break-word; }
+/* Cross-folder dedup badge (SOUL §29): a small pill on a message filed in more than
+   one folder ("also in Archive" / "+2 folders"), tooltip carries the full list. */
+.email-item-folders {
+  flex-shrink: 0; font-size: .62rem; color: var(--muted); background: var(--panel);
+  border: 1px solid var(--accent-2); border-radius: 999px; padding: 0 .4rem;
+  white-space: nowrap; cursor: default;
+}
+.email-meta-folders { margin-left: .5rem; }
+.email-attach { flex-shrink: 0; font-size: .78rem; }
+.email-item-row2 { display: flex; align-items: baseline; justify-content: space-between; gap: .4rem; }
+.email-item-from { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.email-item-when { font-size: .72rem; color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.email-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.email-detail-empty { margin: auto; color: var(--muted); text-align: center; }
+/* Mobile-only Back bar atop the detail pane. Hidden on desktop, where the list
+   and detail sit side by side; shown when the mobile layout swaps the list out
+   for a full-screen message (see the narrow-viewport rules below). */
+.email-detail-topbar {
+  display: none; align-items: center; flex-shrink: 0;
+  padding: .5rem .8rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.email-back-btn {
+  font: inherit; font-size: .85rem; font-weight: 600; color: var(--fg); cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
+  padding: .35rem .7rem; min-height: 36px;
+}
+.email-back-btn:hover { border-color: var(--accent); }
+.email-message { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem 1.2rem; }
+.email-subject-row { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; margin: 0 0 .6rem; }
+.email-subject { margin: 0; font-size: 1.15rem; font-weight: 700; word-break: break-word; }
+.email-subject-row .email-subject { flex: 1; min-width: 0; }
+/* Read/unread toggle — mutates catalerum's local copy only, never the provider. */
+.email-mark-btn {
+  flex-shrink: 0; font: inherit; font-size: .76rem; color: var(--fg); cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: .25rem .55rem;
+}
+.email-mark-btn:hover:not(:disabled) { border-color: var(--accent); }
+.email-mark-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.email-meta {
+  display: flex; flex-direction: column; gap: .2rem; margin-bottom: .9rem;
+  padding-bottom: .7rem; border-bottom: 1px solid var(--border);
+}
+.email-meta-row { display: flex; gap: .6rem; font-size: .85rem; }
+.email-meta-k { flex-shrink: 0; width: 4rem; color: var(--muted); text-transform: uppercase; font-size: .68rem; letter-spacing: .5px; padding-top: .15rem; }
+.email-meta-v { color: var(--fg); word-break: break-word; }
+.email-body {
+  white-space: pre-wrap; word-break: break-word; margin: 0; font: inherit;
+  font-size: .92rem; line-height: 1.55; color: var(--fg);
+}
+.email-empty { color: var(--muted); font-style: italic; }
+/* Sanitized HTML mail renders inside a fully sandboxed iframe (see
+   email.rs::render_body). The white canvas is intentional and not themed —
+   HTML mail is authored against a light background. User-resizable. */
+.email-html-frame {
+  width: 100%; height: 60vh; min-height: 20rem; resize: vertical; overflow: auto;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
+.email-remote-bar {
+  display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem;
+  font-size: .78rem; color: var(--muted);
+}
+.email-remote-btn {
+  font: inherit; font-size: .74rem; color: var(--fg); cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: .15rem .5rem;
+}
+.email-remote-btn:hover { border-color: var(--accent); }
+.email-attachments { padding: 0 1.2rem .7rem; display: flex; flex-direction: column; gap: .5rem; }
+.email-attachments-head { font-size: .68rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.email-attach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem; }
+.email-attach-item { display: inline-flex; }
+.email-attach-btn {
+  display: inline-flex; align-items: center; gap: .4rem; max-width: 22rem;
+  font: inherit; font-size: .82rem; color: var(--fg); cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: .25rem .55rem;
+}
+.email-attach-btn:hover { border-color: var(--accent); }
+.email-attach-eml { align-self: flex-start; }
+.email-attach-icon { opacity: .8; flex-shrink: 0; }
+.email-attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email-attach-size { color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+

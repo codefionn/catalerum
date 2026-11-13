@@ -90,7 +90,7 @@ impl Tool for OcrDocumentTool {
                     )),
                 },
             };
-        let (bytes, content_type) = crate::routes::storage::read_object_bytes(
+        let (bytes, content_type) = crate::object_service::read_object_bytes(
             &self.storage,
             &self.store,
             ws,

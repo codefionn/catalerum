@@ -1,0 +1,72 @@
+/* --- Shared master-detail second sidebar (SOUL §12) --- Every catalogue
+   panel (Chat sessions, Notes, Skills, Profiles, Automations, Grants, History,
+   Memory, Endpoints, Apps, Calendars, Email) is the same shape: a `.pane-split`
+   row holding a `.pane-list` aside (header + scrollable body + rows) beside a
+   `.pane-detail` editor. The look lives here once; a panel keeps its own class
+   only for real deviations (width, extra children). */
+.pane-split { display: flex; flex: 1; min-height: 0; }
+.pane-list {
+  width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border); background: var(--panel); min-height: 0;
+}
+.pane-list-header {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .7rem .8rem; border-bottom: 1px solid var(--border);
+}
+.pane-list-title { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.pane-list-body { flex: 1; min-height: 0; overflow-y: auto; }
+.pane-list-status { color: var(--muted); padding: 1rem .8rem; font-size: .88rem; margin: 0; }
+.pane-list-error { color: var(--err-fg); }
+.pane-search {
+  width: calc(100% - 1rem); margin: .4rem .5rem .1rem; padding: .35rem .5rem;
+  font: inherit; font-size: .82rem; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.pane-search:focus { outline: none; border-color: var(--accent); }
+.pane-items { list-style: none; margin: 0; padding: .4rem; display: flex; flex-direction: column; gap: .2rem; }
+.pane-item {
+  width: 100%; text-align: left; display: flex; flex-direction: column; gap: .15rem;
+  background: transparent; color: var(--fg); border: 1px solid transparent;
+  border-radius: 8px; padding: .5rem .6rem; cursor: pointer;
+}
+.pane-item:hover { background: var(--panel-2); }
+.pane-item-active { background: var(--panel-2); border-color: var(--accent-2); }
+.pane-item-title {
+  font-size: .92rem; font-weight: 600; word-break: break-word;
+  display: flex; align-items: center; gap: .4rem;
+}
+.pane-item-preview {
+  font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-item-meta { font-size: .76rem; color: var(--muted); }
+.pane-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .4rem .8rem; font: inherit; font-size: .85rem;
+  font-weight: 600; cursor: pointer;
+}
+.pane-btn:hover:not(:disabled) { border-color: var(--accent); }
+.pane-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.pane-btn-primary { background: var(--accent-2); color: var(--on-accent); border-color: var(--accent-2); }
+.pane-btn-primary:hover:not(:disabled) { background: var(--accent); }
+.pane-btn-danger { background: var(--err); color: var(--err-fg); border-color: var(--err-border); }
+.pane-btn-danger:hover:not(:disabled) { border-color: var(--err-fg); }
+.pane-detail { flex: 1; min-width: 0; display: flex; }
+
+/* The list pane collapses to an off-canvas drawer on narrow viewports, toggled
+   by the ☰ `.list-drawer-toggle` in the detail pane — the same affordance as
+   the chat sessions sidebar (`widgets::list_drawer_scrim`/`list_drawer_toggle`).
+   All three pieces are inert on desktop; the mobile media query below turns the
+   `.list-drawer`-classed aside off-canvas and reveals the toggle + scrim. */
+.list-drawer-scrim {
+  display: none; position: fixed; inset: 0; z-index: 59; background: var(--scrim);
+  border: 0; padding: 0; opacity: 0; pointer-events: none; transition: opacity .18s ease;
+}
+.list-drawer-toggle {
+  display: none; align-items: center; gap: .3rem; align-self: flex-start;
+  margin: .5rem .8rem 0; padding: .3rem .7rem; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit;
+  font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.list-drawer-toggle:hover { background: var(--panel-2); }
+

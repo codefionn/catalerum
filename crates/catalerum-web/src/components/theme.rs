@@ -1,7 +1,7 @@
 //! Workbench color themes — catalogue, persistence, and the reusable picker.
 //!
 //! A theme is a set of CSS custom-property overrides scoped under
-//! `:root[data-theme="<id>"]` in the stylesheet (see `lib.rs`). This module owns
+//! `:root[data-theme="<id>"]` in the stylesheet (see `src/style/01-theme-tokens.css`). This module owns
 //! the Rust side: the [`Theme`] catalogue, caching the choice in `localStorage`,
 //! applying it to the document root (`<html data-theme=…>`), and the reusable
 //! [`ThemePicker`] surface rendered in **Settings → Appearance** and in the

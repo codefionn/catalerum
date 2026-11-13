@@ -1,0 +1,123 @@
+/* --- Emerged UIs (AI-authored declarative UIs, rendered inline) --- */
+.eu-artifact { margin-top: .5rem; }
+.eu-app {
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+  overflow: hidden;
+}
+/* A spec-level max_width clamps the frame; center it in the column. */
+.eu-app[style] { margin-inline: auto; }
+.eu-app-head {
+  padding: .45rem .7rem; font-weight: 700; font-size: .9rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--border);
+}
+.eu-app-body { padding: .7rem; display: flex; flex-direction: column; gap: .6rem; }
+.eu-loading, .eu-load-error {
+  padding: .6rem .7rem; font-size: .85rem; color: var(--muted);
+}
+.eu-load-error { color: var(--err-fg); }
+
+/* Layout containers. */
+.eu-stack { display: flex; flex-direction: column; gap: .6rem; }
+.eu-row { display: flex; flex-direction: row; gap: .6rem; flex-wrap: wrap; align-items: flex-start; }
+.eu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem; }
+.eu-constrained { box-sizing: border-box; min-width: 0; }
+.eu-constrained.eu-align-start { align-self: flex-start; }
+.eu-constrained.eu-align-center { align-self: center; margin-inline: auto; }
+.eu-constrained.eu-align-end { align-self: flex-end; margin-inline-start: auto; }
+.eu-constrained.eu-align-stretch { align-self: stretch; width: 100%; }
+.eu-constrained.eu-overflow-visible { overflow: visible; }
+.eu-constrained.eu-overflow-hidden { overflow: hidden; }
+.eu-constrained.eu-overflow-auto { overflow: auto; }
+.eu-constrained > .eu-img { max-height: inherit; }
+.eu-aspect-ratio { width: 100%; min-width: 0; overflow: hidden; }
+.eu-aspect-ratio > * { width: 100%; height: 100%; min-width: 0; }
+.eu-aspect-ratio > .eu-img { max-width: none; object-position: center; }
+.eu-aspect-ratio.eu-fit-contain > .eu-img { object-fit: contain; }
+.eu-aspect-ratio.eu-fit-cover > .eu-img { object-fit: cover; }
+.eu-aspect-ratio.eu-fit-fill > .eu-img { object-fit: fill; }
+.eu-card {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+  padding: .7rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.eu-card-title { font-weight: 700; font-size: .9rem; }
+.eu-cond { display: contents; }
+.eu-divider { border: none; border-top: 1px solid var(--border); margin: .2rem 0; width: 100%; }
+
+/* Tabs (header strip over the active panel). */
+.eu-tabs { display: flex; flex-direction: column; gap: .6rem; }
+.eu-tab-strip {
+  display: flex; flex-wrap: wrap; gap: .15rem;
+  border-bottom: 1px solid var(--border);
+}
+.eu-tab {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font: inherit; font-size: .85rem; font-weight: 600;
+  padding: .4rem .7rem; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.eu-tab:hover { color: var(--fg); }
+.eu-tab-active { color: var(--fg); border-bottom-color: var(--accent-2); }
+.eu-tab-panel { display: flex; flex-direction: column; gap: .6rem; }
+
+/* Content. */
+.eu-text { white-space: pre-wrap; word-break: break-word; }
+.eu-heading { margin: 0; font-weight: 700; line-height: 1.2; }
+.eu-md { white-space: normal; }
+.eu-img { max-width: 100%; height: auto; border-radius: 7px; display: block; }
+.eu-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.eu-link:hover { color: var(--accent-2); }
+
+/* Status badge. */
+.eu-badge {
+  display: inline-flex; align-items: center; align-self: flex-start;
+  padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+  line-height: 1.4; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg);
+}
+.eu-badge-info { background: #1c2c4a; color: #cfe0ff; border-color: #2f4a7a; }
+.eu-badge-success { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
+.eu-badge-warn { background: #3a2e12; color: #f2d48b; border-color: #6a5320; }
+.eu-badge-error { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-border); }
+
+/* Progress bar. */
+.eu-progress-wrap { display: flex; flex-direction: column; gap: .2rem; width: 100%; }
+.eu-progress-label { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.eu-progress {
+  width: 100%; height: .55rem; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
+}
+.eu-progress-bar {
+  height: 100%; background: var(--accent-2); border-radius: 999px;
+  transition: width .25s ease;
+}
+
+/* Collections (list / table read-only leaves). */
+.eu-list-host, .eu-table-host { width: 100%; }
+.eu-list { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: .15rem; }
+.eu-list li { color: var(--fg); font-size: .88rem; }
+.eu-empty {
+  padding: .6rem; text-align: center; font-size: .8rem; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 8px; background: var(--panel-2);
+}
+.eu-table-scroll { overflow-x: auto; }
+.eu-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.eu-table th {
+  text-align: left; padding: .3rem .55rem; color: var(--muted); font-weight: 600;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.eu-table td { padding: .3rem .55rem; border-bottom: 1px solid var(--border); color: var(--fg); }
+.eu-table tbody tr:hover { background: var(--panel-2); }
+
+/* for_each pagination (render.rs). `grid-column: 1 / -1` makes the pager / "load
+   more" span every column when the loop's parent is a grid; harmless in a
+   flex/block parent. */
+.eu-pager {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: center;
+  gap: .6rem; margin-top: .5rem;
+}
+.eu-pager-btn { padding: .25rem .6rem; font-size: .82rem; }
+.eu-pager-status { font-size: .8rem; color: var(--muted); min-width: 6.5rem; text-align: center; }
+.eu-scroll-sentinel {
+  grid-column: 1 / -1; display: flex; justify-content: center;
+  min-height: 1px; padding: .4rem 0;
+}
+.eu-more-btn { padding: .25rem .8rem; font-size: .82rem; }
+
