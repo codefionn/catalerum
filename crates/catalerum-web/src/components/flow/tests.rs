@@ -1024,6 +1024,28 @@ fn typed_action_forms_build_clean_params() {
         json!({ "kind": "create_chat_thread", "message": "done" })
     );
 
+    // Start chat: prompt + optionals trimmed, blanks omitted, `wait` only when off.
+    assert_eq!(
+        start_chat_params(&StartChatForm {
+            prompt: " Brief me ",
+            title: " Morning ",
+            model: " ",
+            profile: "ops",
+            wait: true,
+        }),
+        json!({ "kind": "start_chat", "prompt": "Brief me", "title": "Morning", "profile": "ops" })
+    );
+    assert_eq!(
+        start_chat_params(&StartChatForm {
+            prompt: "hi",
+            title: "",
+            model: "m",
+            profile: "",
+            wait: false,
+        }),
+        json!({ "kind": "start_chat", "prompt": "hi", "model": "m", "wait": false })
+    );
+
     // Create note: title + markdown trimmed, tags split on commas (blanks dropped).
     assert_eq!(
         note_params("Standup", "notes", "work, , urgent"),

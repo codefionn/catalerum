@@ -266,6 +266,7 @@ pub(super) const TRIGGER_KINDS: &[(&str, &str)] = &[
 pub(super) const ACTION_KINDS: &[(&str, &str)] = &[
     ("summarize", "Summarize"),
     ("create_chat_thread", "Create chat thread"),
+    ("start_chat", "Start chat"),
     ("notify", "Notify"),
     ("llm_agent", "LLM agent"),
     ("llm_decision", "Decision model"),

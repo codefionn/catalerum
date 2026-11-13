@@ -680,6 +680,9 @@ async fn main() -> anyhow::Result<()> {
         state.config().llm.default_model.clone(),
     )
     .with_decision_model(state.config().llm.decision_model.clone())
+    // The chat runtime so a `start_chat` node runs a real, live-attachable chat
+    // turn in a new thread (SOUL §7/§11/§12).
+    .with_chat_turns(state.clone())
     // Storage backends so the collect pipeline archives a collected message's raw
     // `.eml` + attachments as objects and links them onto the row (SOUL §9/§28/§29);
     // runtime backends + the per-user default files store resolve through the store.

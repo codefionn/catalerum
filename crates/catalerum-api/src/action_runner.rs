@@ -62,9 +62,16 @@
 //! template-rendered `message` as its first assistant turn. It is gated on
 //! `conversation:write`, appears in the ordinary Chat list, and returns both ids
 //! for downstream graph nodes.
+//!
+//! A **`StartChat`** action (SOUL §7/§11/§12) is its interactive sibling: it opens
+//! a new `automation`-origin thread with the template-rendered `prompt` as the
+//! first **user** message and runs an ordinary chat turn on it through the
+//! attached chat runtime ([`with_chat_turns`](ToolActionRunner::with_chat_turns)),
+//! under the automation's authority. See [`start_chat`].
 
 mod collect;
 mod prompt;
+mod start_chat;
 mod templating;
 
 #[cfg(test)]
@@ -93,6 +100,8 @@ use prompt::{
     extract_json, summarize_request, system_with_skills, trigger_prompt, JSON_OUTPUT_INSTRUCTION,
 };
 use templating::render_params;
+
+pub(crate) use start_chat::{ChatTurnReport, ChatTurnRequest, ChatTurnStarter, StartedChatTurn};
 
 pub(crate) use collect::get_or_create_local_calendar_by_name;
 
@@ -139,6 +148,9 @@ pub struct ToolActionRunner {
     /// the row (SOUL §28/§29). `None` → archival is a clean no-op (opt-in by having
     /// a store configured, matching chat uploads).
     storage: Option<Arc<StorageRegistry>>,
+    /// Runs a chat turn without a socket, for `StartChat`. `None` → that action
+    /// reports `Failed`.
+    chat_starter: Option<Arc<dyn ChatTurnStarter>>,
 }
 
 impl ToolActionRunner {
@@ -157,6 +169,7 @@ impl ToolActionRunner {
             llm: None,
             decision_model: None,
             storage: None,
+            chat_starter: None,
         }
     }
 
@@ -181,6 +194,7 @@ impl ToolActionRunner {
             llm: None,
             decision_model: None,
             storage: None,
+            chat_starter: None,
         }
     }
 
@@ -193,6 +207,21 @@ impl ToolActionRunner {
     #[must_use]
     pub fn with_storage(mut self, storage: Arc<StorageRegistry>) -> Self {
         self.storage = Some(storage);
+        self
+    }
+
+    /// Attach the chat runtime so a `StartChat` action can run a real chat turn
+    /// (streamed into the turn buffer, serialized on the conversation lock, and
+    /// attachable live from the web UI). Without it, `StartChat` reports `Failed`.
+    #[must_use]
+    pub fn with_chat_turns(self, state: crate::AppState) -> Self {
+        self.with_chat_starter(Arc::new(crate::routes::ws::AppChatStarter::new(state)))
+    }
+
+    /// Attach a [`ChatTurnStarter`] directly (tests use a fake).
+    #[must_use]
+    pub(crate) fn with_chat_starter(mut self, starter: Arc<dyn ChatTurnStarter>) -> Self {
+        self.chat_starter = Some(starter);
         self
     }
 
@@ -1098,6 +1127,13 @@ impl ActionRunner for ToolActionRunner {
         if action.kind == ActionKind::CreateChatThread {
             return self
                 .run_create_chat_thread(workspace_id, action, trigger, grant)
+                .await;
+        }
+        // StartChat creates a thread and runs a full chat turn on it through the
+        // attached chat runtime, not a registry tool dispatch.
+        if action.kind == ActionKind::StartChat {
+            return self
+                .run_start_chat(workspace_id, action, trigger, grant)
                 .await;
         }
         // The collect-write actions (SOUL §10/§28) persist an item carried on the

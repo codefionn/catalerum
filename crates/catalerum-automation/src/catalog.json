@@ -1351,6 +1351,70 @@
     ]
   },
   {
+    "id": "action.start_chat",
+    "node_kind": "action",
+    "kind": "start_chat",
+    "title": "Start chat action",
+    "summary": "Start a new Chat thread with a prompt and let the assistant answer it.",
+    "description": "Creates a new conversation in the workspace's Chat list, posts `prompt` as its first user message, and runs a normal chat turn on it: the assistant answers with the regular chat agent loop, its tools, memories, and skills, exactly as if someone had typed the prompt. Use it to hand a recurring or triggered task to the chat assistant so the result lands in a thread you can open and continue. `prompt` and `title` support upstream templates such as `{{ inputs.fetch.content }}`. Optional `model` pins the thread's model, `profile` runs the thread as a named agent profile (its grant is intersected with the automation's, never wider). With `wait` true (the default) the node blocks until the reply is done and returns `reply`, `message_id`, `conversation_id`, and `user_message_id`; with `wait` false it returns the ids right away and the turn keeps running in the background. The turn runs under the automation's authority (its bound grant, else the workspace owner limited to base Member capabilities). Gated on `conversation:write` capability. Skipped on a collect redelivery so a thread is never started twice.",
+    "params": [
+      {
+        "name": "prompt",
+        "ty": "string",
+        "required": true,
+        "description": "Non-empty first user message the assistant answers; may template upstream node output."
+      },
+      {
+        "name": "title",
+        "ty": "string",
+        "required": false,
+        "description": "Thread title, pinned against auto-titling. Omit to let Chat generate one from the exchange."
+      },
+      {
+        "name": "model",
+        "ty": "string",
+        "required": false,
+        "description": "Model id to pin on the thread (default: the acting user's chat model, else the workspace default)."
+      },
+      {
+        "name": "profile",
+        "ty": "string",
+        "required": false,
+        "description": "Name of an agent profile to run the thread as (its persona, tools, and model)."
+      },
+      {
+        "name": "wait",
+        "ty": "boolean",
+        "required": false,
+        "description": "Block until the assistant finishes and return its `reply` (default true). False returns immediately."
+      }
+    ],
+    "example": {
+      "id": "morning_chat",
+      "kind": "action",
+      "action": {
+        "kind": "start_chat",
+        "title": "Morning briefing",
+        "prompt": "Summarize today's calendar and any urgent email for me."
+      },
+      "position": {
+        "x": 100,
+        "y": 450
+      }
+    },
+    "keywords": [
+      "chat",
+      "conversation",
+      "thread",
+      "prompt",
+      "start",
+      "new",
+      "assistant",
+      "ask",
+      "agent"
+    ]
+  },
+  {
     "id": "action.run_command",
     "node_kind": "action",
     "kind": "run_command",

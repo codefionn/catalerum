@@ -157,6 +157,7 @@ mod tests {
         "create_task",
         "move_task",
         "create_chat_thread",
+        "start_chat",
         "notify",
         "summarize",
         "index_document",

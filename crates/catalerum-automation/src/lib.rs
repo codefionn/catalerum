@@ -376,6 +376,15 @@ pub enum ActionKind {
     /// thread. The thread is visible in the ordinary conversation list and can be
     /// continued by a user. Gated `conversation:write`.
     CreateChatThread,
+    /// Start a new chat thread with `prompt` as its first **user** message and run
+    /// an ordinary chat turn on it (SOUL §7/§11/§12): the assistant answers with the
+    /// normal chat agent loop, tools, and seed context, the turn streams like any
+    /// other (a user opening the thread mid-run attaches live), and the thread stays
+    /// continuable. Runs under the automation's authority (its grant, else the
+    /// workspace owner bounded to base Member). Optional `title`, `model`, `profile`
+    /// (agent profile name), and `wait` (default `true`: block until the reply and
+    /// return it as `reply`). Gated `conversation:write`.
+    StartChat,
     /// Send a message to a channel (§25).
     Notify,
     Summarize,
@@ -433,7 +442,7 @@ impl ActionKind {
     /// the DAG executor auto-**Skips** every *non-idempotent* action node so it
     /// doesn't double-fire: no double-spent `LlmAgent`/`RunSkill`/`Summarize` tokens,
     /// no re-sent `Notify`/`Webhook`, no re-run `LabelEmail`/`RunCommand`, no
-    /// duplicated `CreateNote`/`CreateTask`/`CreateEvent`/`CreateChatThread`. An
+    /// duplicated `CreateNote`/`CreateTask`/`CreateEvent`/`CreateChatThread`/`StartChat`. An
     /// **idempotent** action still runs: the write itself *must* run so its success
     /// advances the collect cursor (`commit_on`), and re-running a keyed upsert /
     /// pure transform / read is harmless. A node can force a non-idempotent action
@@ -1004,6 +1013,7 @@ mod tests {
             ActionKind::CreateTask,
             ActionKind::CreateEvent,
             ActionKind::CreateChatThread,
+            ActionKind::StartChat,
             ActionKind::RunCommand,
         ] {
             assert!(!k.is_idempotent(), "{k:?} must be skipped on a redelivery");

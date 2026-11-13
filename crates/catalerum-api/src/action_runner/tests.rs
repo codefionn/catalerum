@@ -142,6 +142,7 @@ fn tool_mapping_covers_the_tool_backed_kinds_only() {
     assert_eq!(tool_for(ActionKind::LlmAgent), None);
     assert_eq!(tool_for(ActionKind::Summarize), None);
     assert_eq!(tool_for(ActionKind::CreateChatThread), None);
+    assert_eq!(tool_for(ActionKind::StartChat), None);
     // The collect-write actions are special-cased before `tool_for` (they read
     // the whole trigger item + do a store upsert), so they have no tool mapping.
     assert_eq!(tool_for(ActionKind::WriteEmail), None);
@@ -244,6 +245,136 @@ async fn create_chat_thread_publishes_automation_output_and_checks_authority() {
             .len(),
         1,
         "denied output must not create another thread"
+    );
+}
+
+/// Records each headless turn request and answers with a canned reply.
+#[derive(Default)]
+struct FakeChatStarter {
+    requests: std::sync::Mutex<Vec<ChatTurnRequest>>,
+}
+
+#[async_trait]
+impl ChatTurnStarter for FakeChatStarter {
+    async fn start_turn(&self, request: ChatTurnRequest) -> Result<StartedChatTurn, String> {
+        let reply = format!("re: {}", request.prompt);
+        self.requests.lock().unwrap().push(request);
+        Ok(StartedChatTurn {
+            user_message_id: catalerum_core::MessageId::new(),
+            done: tokio::spawn(async move {
+                Ok(ChatTurnReport {
+                    message_id: None,
+                    reply,
+                    stopped: false,
+                    truncated: false,
+                })
+            }),
+        })
+    }
+}
+
+/// A StartChat node opens an automation-origin thread (title pinned, model
+/// set), hands the rendered prompt to the chat runtime under the automation's
+/// own bounded authority, and returns the reply. A missing profile or missing
+/// `conversation:write` leaves no thread behind.
+#[tokio::test]
+async fn start_chat_opens_thread_and_runs_turn_under_automation_authority() {
+    let Some(url) = db_url() else {
+        eprintln!("skipping start_chat test: set CATALERUM_TEST_DATABASE_URL or DATABASE_URL");
+        return;
+    };
+    let store = crate::test_db::isolated_store(&url).await;
+    let ws = store
+        .workspaces()
+        .create("start-chat", &format!("start-chat-{}", uuid::Uuid::new_v4()))
+        .await
+        .expect("workspace");
+    let owner = store
+        .users()
+        .create(
+            &format!("start-chat-{}@t.test", uuid::Uuid::new_v4()),
+            "Owner",
+            None,
+        )
+        .await
+        .expect("owner");
+    store
+        .memberships()
+        .upsert(ws.id, owner.id, Role::Owner)
+        .await
+        .expect("membership");
+
+    let starter = Arc::new(FakeChatStarter::default());
+    let runner = ToolActionRunner::workspace_owner_authority(ToolRegistry::new(), store.clone())
+        .with_chat_starter(starter.clone());
+    let run_context = json!({
+        "trigger": null,
+        "inputs": { "feed": { "topic": "CVE digest" } }
+    });
+
+    let action: Action = serde_json::from_value(json!({
+        "kind": "start_chat",
+        "title": "{{ inputs.feed.topic }}",
+        "prompt": "Summarize the {{ inputs.feed.topic }}",
+        "model": "some/model"
+    }))
+    .unwrap();
+    let outcome = runner.run(ws.id, &action, Some(&run_context), None).await;
+    assert_eq!(outcome.status, StepStatus::Succeeded, "{:?}", outcome.error);
+    let output = outcome.output.expect("output");
+    assert_eq!(output["reply"], json!("re: Summarize the CVE digest"));
+    assert_eq!(output["status"], json!("done"));
+
+    let conversations = store.conversations().list_by_workspace(ws.id).await.unwrap();
+    assert_eq!(conversations.len(), 1);
+    let conversation = &conversations[0];
+    assert_eq!(conversation.origin, Origin::Automation);
+    assert_eq!(conversation.title.as_deref(), Some("CVE digest"));
+    assert!(conversation.title_manual, "a given title must survive auto-titling");
+    assert_eq!(conversation.model.as_deref(), Some("some/model"));
+    assert_eq!(output["conversation_id"], json!(conversation.id));
+    {
+        let requests = starter.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.conversation_id, conversation.id);
+        assert_eq!(request.prompt, "Summarize the CVE digest");
+        assert_eq!(request.user_id, owner.id);
+        assert_eq!(request.grant_id, None);
+        assert_eq!(request.capabilities, default_automation_capabilities());
+    }
+
+    // Fire-and-forget returns at once with the ids.
+    let detached: Action =
+        serde_json::from_value(json!({ "kind": "start_chat", "prompt": "hi", "wait": false }))
+            .unwrap();
+    let outcome = runner.run(ws.id, &detached, None, None).await;
+    assert_eq!(outcome.status, StepStatus::Succeeded);
+    let output = outcome.output.unwrap();
+    assert_eq!(output["status"], json!("running"));
+    assert!(output.get("reply").is_none());
+
+    // An unknown profile fails before anything is written.
+    let bad_profile: Action = serde_json::from_value(
+        json!({ "kind": "start_chat", "prompt": "hi", "profile": "nobody" }),
+    )
+    .unwrap();
+    let outcome = runner.run(ws.id, &bad_profile, None, None).await;
+    assert_eq!(outcome.status, StepStatus::Failed);
+    assert!(outcome.error.unwrap().contains("nobody"));
+
+    let denied = runner
+        .clone()
+        .with_capabilities(Vec::new())
+        .run(ws.id, &detached, None, None)
+        .await;
+    assert_eq!(denied.status, StepStatus::Failed);
+    assert!(denied.error.unwrap().contains("conversation:write"));
+    assert_eq!(starter.requests.lock().unwrap().len(), 2);
+    assert_eq!(
+        store.conversations().list_by_workspace(ws.id).await.unwrap().len(),
+        2,
+        "failed starts must not leave threads behind"
     );
 }
 

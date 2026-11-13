@@ -91,6 +91,9 @@ use crate::guidance;
 use crate::state::AppState;
 use crate::tools::is_ui_authoring_tool;
 
+mod headless;
+pub(crate) use headless::AppChatStarter;
+
 const DEFAULT_CHAT_PROFILE_SYSTEM_PROMPT: &str = "You are an highly competent assistant.";
 
 fn chat_profile_system_prompt(prompt: Option<&str>) -> &str {
@@ -696,33 +699,16 @@ async fn start_and_forward(
     // Register BEFORE spawning so a stop landing during the run's lock-wait still
     // reaches its cancel token; the guard rides the spawned task and deregisters
     // on every exit path.
-    let guard = state
-        .active_turns()
-        .register_guarded(turn_id, intake.cancel.clone());
-    let run_state = state.clone();
-    let run_principal = *principal;
-    let run_intake = intake.clone();
-    tokio::spawn(async move {
-        let _guard = guard;
-        let sink = TurnSink::new(run_state.bus().clone(), turn_id);
-        if let Err(e) = run_turn(
-            &sink,
-            &run_state,
-            &run_principal,
-            frame,
-            turn_id,
-            &run_intake,
-        )
-        .await
-        {
-            sink.emit(ServerFrame::Error {
-                message: e.to_string(),
-            })
-            .await;
-        }
-        // Guarantee a terminal frame so every forwarder unwinds.
-        sink.finish_if_needed().await;
-    });
+    // The run's result only matters to a headless caller; this socket learns the
+    // outcome from the buffer's terminal frame.
+    drop(spawn_turn(
+        state.clone(),
+        *principal,
+        frame,
+        turn_id,
+        intake.clone(),
+        None,
+    ));
     forward_turn(
         sink,
         stream,
@@ -734,6 +720,63 @@ async fn start_and_forward(
         pending,
     )
     .await
+}
+
+/// Spawn one chat turn as a **detached** task: register it as live on this pod
+/// (BEFORE spawning, so a stop landing during the run's lock-wait still reaches
+/// its cancel token), run it into its replayable turn buffer, and guarantee a
+/// terminal frame so every forwarder unwinds. The handle resolves to the turn's
+/// report; dropping it leaves the run going (the socket path does that).
+fn spawn_turn(
+    state: AppState,
+    principal: Principal,
+    frame: ClientFrame,
+    turn_id: TurnId,
+    intake: TurnIntake,
+    caps_override: Option<Vec<Capability>>,
+) -> tokio::task::JoinHandle<Result<TurnReport, String>> {
+    let guard = state
+        .active_turns()
+        .register_guarded(turn_id, intake.cancel.clone());
+    tokio::spawn(async move {
+        let _guard = guard;
+        let sink = TurnSink::new(state.bus().clone(), turn_id);
+        let result = run_turn(
+            &sink,
+            &state,
+            &principal,
+            frame,
+            turn_id,
+            &intake,
+            caps_override,
+        )
+        .await
+        .map_err(|e| e.to_string());
+        if let Err(message) = &result {
+            sink.emit(ServerFrame::Error {
+                message: message.clone(),
+            })
+            .await;
+        }
+        // Guarantee a terminal frame so every forwarder unwinds.
+        sink.finish_if_needed().await;
+        result
+    })
+}
+
+/// What a finished turn produced, for callers that run a turn without a socket
+/// (the automation `start_chat` action). Default = a turn that appended nothing
+/// (an idempotent retry of an already-committed user message).
+#[derive(Debug, Default)]
+pub(crate) struct TurnReport {
+    /// The final assistant row, if the loop appended one.
+    pub(crate) final_message_id: Option<MessageId>,
+    /// The final assistant turn's text (`message_done.content`).
+    pub(crate) content: String,
+    /// The turn was cancelled by a Stop.
+    pub(crate) stopped: bool,
+    /// The loop hit its iteration or tool-loop cap.
+    pub(crate) truncated: bool,
 }
 
 /// A syntactically valid stream cursor — `{ms}` or `{ms}-{seq}`, digits only —
@@ -1230,6 +1273,11 @@ async fn control_listener(
 /// Persist the user turn, run the streamed agent loop (relaying every delta and
 /// dispatching tools server-side), persist the full transcript, then emit
 /// `message_done`.
+///
+/// `caps_override` replaces the authority derived from `principal` (its grant,
+/// else its role's base set). Only a headless caller that already resolved its
+/// own authority passes it (an automation's grant or bounded default); a client
+/// socket never does.
 async fn run_turn(
     sink: &TurnSink,
     state: &AppState,
@@ -1237,7 +1285,8 @@ async fn run_turn(
     frame: ClientFrame,
     turn_id: TurnId,
     intake: &TurnIntake,
-) -> Result<(), ApiError> {
+    caps_override: Option<Vec<Capability>>,
+) -> Result<TurnReport, ApiError> {
     let ws_id = principal.workspace_id;
     let conversation_id = frame.conversation_id;
 
@@ -1282,7 +1331,7 @@ async fn run_turn(
                     conversation_id,
                 })
                 .await;
-                return Ok(());
+                return Ok(TurnReport::default());
             }
         }
     }
@@ -1296,10 +1345,12 @@ async fn run_turn(
         Some(gid) => Some(state.store().grants().get(ws_id, gid).await?),
         None => None,
     };
-    let user_caps = session_grant
-        .as_ref()
-        .map(|grant| grant.capabilities.clone())
-        .unwrap_or_else(|| catalerum_iam::base_capabilities(principal.role));
+    let user_caps = caps_override.unwrap_or_else(|| {
+        session_grant
+            .as_ref()
+            .map(|grant| grant.capabilities.clone())
+            .unwrap_or_else(|| catalerum_iam::base_capabilities(principal.role))
+    });
 
     // A `/<skill>` invocation (SOUL §12/§23): resolve + gate + snapshot BEFORE the
     // user row persists, so the runbook rides the row — this turn's seed reads it
@@ -1876,6 +1927,13 @@ async fn run_turn(
         .await;
     }
 
+    let report = TurnReport {
+        final_message_id: final_assistant_id,
+        content: outcome.content.clone(),
+        stopped: outcome.stopped,
+        truncated: outcome.hit_iteration_cap || outcome.hit_tool_loop_cap,
+    };
+
     // 5. Terminal message_done frame — the last entry in the turn buffer, which
     // is how every forwarder (originating or reconnecting) knows the turn ended.
     // The id is the final assistant turn; if the loop somehow appended nothing,
@@ -1927,7 +1985,7 @@ async fn run_turn(
     // generator by construction.
     crate::chat_meta::maybe_generate_meta(state, ws_id, conversation_id, turn_model).await;
 
-    Ok(())
+    Ok(report)
 }
 
 /// Consumer group draining a conversation's durable mid-turn input queue.

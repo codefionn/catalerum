@@ -55,6 +55,7 @@ pub(super) fn action_config(graph: RwSignal<FlowGraph>, id: String, action: Valu
                 }
                 "notify" => notify_config(graph, id).into_any(),
                 "create_chat_thread" => chat_thread_config(graph, id).into_any(),
+                "start_chat" => start_chat_config(graph, id).into_any(),
                 "create_note" => note_config(graph, id).into_any(),
                 "create_task" => task_config(graph, id).into_any(),
                 "create_event" => event_config(graph, id).into_any(),
@@ -140,6 +141,85 @@ fn chat_thread_config(graph: RwSignal<FlowGraph>, id: String) -> impl IntoView {
         ></textarea>
         <div class="flow-cfg-hint">
             "Creates a new thread in Chat with this assistant message. You can reference upstream output with {{ inputs.node.field }}."
+        </div>
+    }
+}
+
+/// Typed config for a **Start chat** action: a prompt the chat assistant
+/// answers in a new thread, plus optional title/model/profile and whether the
+/// node waits for the reply.
+fn start_chat_config(graph: RwSignal<FlowGraph>, id: String) -> impl IntoView {
+    let action = node_action(graph, &id);
+    let prompt_sig = RwSignal::new(str_field(&action, "prompt"));
+    let title_sig = RwSignal::new(str_field(&action, "title"));
+    let model_sig = RwSignal::new(str_field(&action, "model"));
+    let profile_sig = RwSignal::new(str_field(&action, "profile"));
+    let wait_sig = RwSignal::new(action.get("wait").and_then(Value::as_bool).unwrap_or(true));
+    let id_sv = StoredValue::new(id);
+    let apply = move || {
+        let value = start_chat_params(&StartChatForm {
+            prompt: &prompt_sig.get_untracked(),
+            title: &title_sig.get_untracked(),
+            model: &model_sig.get_untracked(),
+            profile: &profile_sig.get_untracked(),
+            wait: wait_sig.get_untracked(),
+        });
+        set_node_action(graph, &id_sv.get_value(), value);
+    };
+    view! {
+        <label class="flow-cfg-label">"Prompt"</label>
+        <textarea
+            class="flow-cfg-area"
+            placeholder="Summarize {{ inputs.fetch.content }}"
+            prop:value=move || prompt_sig.get()
+            on:input=move |ev| {
+                prompt_sig.set(event_target_value(&ev));
+                apply();
+            }
+        ></textarea>
+        <label class="flow-cfg-label">"Thread title (optional)"</label>
+        <input
+            class="flow-cfg-input"
+            placeholder="Generated from the conversation"
+            prop:value=move || title_sig.get()
+            on:input=move |ev| {
+                title_sig.set(event_target_value(&ev));
+                apply();
+            }
+        />
+        <label class="flow-cfg-label">"Model (optional)"</label>
+        <input
+            class="flow-cfg-input"
+            placeholder="Your chat model"
+            prop:value=move || model_sig.get()
+            on:input=move |ev| {
+                model_sig.set(event_target_value(&ev));
+                apply();
+            }
+        />
+        <label class="flow-cfg-label">"Agent profile (optional)"</label>
+        <input
+            class="flow-cfg-input"
+            placeholder="profile name"
+            prop:value=move || profile_sig.get()
+            on:input=move |ev| {
+                profile_sig.set(event_target_value(&ev));
+                apply();
+            }
+        />
+        <label class="flow-tool">
+            <input
+                type="checkbox"
+                prop:checked=move || wait_sig.get()
+                on:change=move |_| {
+                    wait_sig.update(|b| *b = !*b);
+                    apply();
+                }
+            />
+            "Wait for the reply"
+        </label>
+        <div class="flow-cfg-hint">
+            "Opens a new Chat thread with this prompt as your message and lets the assistant answer it. With waiting on, later nodes can use {{ inputs.node.reply }}."
         </div>
     }
 }
@@ -416,6 +496,30 @@ pub(super) fn chat_thread_params(title: &str, message: &str) -> Value {
     );
     insert_if_set(&mut obj, "title", title);
     insert_if_set(&mut obj, "message", message);
+    Value::Object(obj)
+}
+
+/// The typed `start_chat` form fields.
+pub(super) struct StartChatForm<'a> {
+    pub(super) prompt: &'a str,
+    pub(super) title: &'a str,
+    pub(super) model: &'a str,
+    pub(super) profile: &'a str,
+    pub(super) wait: bool,
+}
+
+/// Build a `start_chat` action from the typed form. Blank optional fields are
+/// omitted, and `wait` is emitted only when off (the backend defaults it on).
+pub(super) fn start_chat_params(form: &StartChatForm<'_>) -> Value {
+    let mut obj = Map::new();
+    obj.insert("kind".to_string(), Value::String("start_chat".to_string()));
+    insert_if_set(&mut obj, "prompt", form.prompt);
+    insert_if_set(&mut obj, "title", form.title);
+    insert_if_set(&mut obj, "model", form.model);
+    insert_if_set(&mut obj, "profile", form.profile);
+    if !form.wait {
+        obj.insert("wait".to_string(), Value::Bool(false));
+    }
     Value::Object(obj)
 }
 
