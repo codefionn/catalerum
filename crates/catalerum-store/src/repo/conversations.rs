@@ -99,9 +99,9 @@ impl ConversationRepo {
         .map_err(map)?;
 
         let message_row: MessageRow = sqlx::query_as(
-            "INSERT INTO messages (id, conversation_id, role, content)
-             VALUES ($1, $2, $3, $4)
-             RETURNING id, conversation_id, role, content, attachments, skill, tool_calls,
+            "INSERT INTO messages (id, conversation_id, role, content, workspace_id)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls,
                        tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens,
                        completion_tokens, total_tokens, cached_tokens, cache_creation_tokens,
                        cost_usd, created_at",
@@ -110,6 +110,7 @@ impl ConversationRepo {
         .bind(conversation_id.into_uuid())
         .bind(role_text)
         .bind(content)
+        .bind(workspace_id.into_uuid())
         .fetch_one(&mut *tx)
         .await
         .map_err(map)?;

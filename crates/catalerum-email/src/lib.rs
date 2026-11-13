@@ -190,6 +190,45 @@ pub fn provider_from_connection_with(
     }
 }
 
+/// A backend whose **legacy plaintext** OAuth credentials (kept in the
+/// connection `config`) can be proved and folded into a sealable [`GmailTokens`]
+/// blob, the input [`reseal_gmail_plaintext`] seals (SOUL §13/§28). Built by
+/// [`plaintext_reseal_from_connection`]; today only Gmail implements it.
+#[async_trait]
+pub trait PlaintextReseal: Send + Sync {
+    /// Exchange the plaintext credentials for a fresh access token and return the
+    /// sealable blob. `Ok(None)` when the backend is already on the sealed path;
+    /// `Err` when the grant fails (broken credentials must not be sealed).
+    async fn plaintext_reseal_blob(&self) -> Result<Option<GmailTokens>>;
+}
+
+#[async_trait]
+impl PlaintextReseal for gmail::GmailProvider {
+    async fn plaintext_reseal_blob(&self) -> Result<Option<GmailTokens>> {
+        gmail::GmailProvider::plaintext_reseal_blob(self).await
+    }
+}
+
+/// Build the [`PlaintextReseal`] source for a connection from its plaintext
+/// `config`, the reseal counterpart of [`provider_from_connection`]. Only a
+/// **Gmail** connection supports it; any other backend, or a Gmail config
+/// missing its credential triplet, is an [`Error`].
+pub fn plaintext_reseal_from_connection(
+    connection: &Connection,
+    config: &Value,
+) -> Result<Arc<dyn PlaintextReseal>> {
+    match EmailSubKind::from_config(config)? {
+        EmailSubKind::Gmail => Ok(Arc::new(gmail::GmailProvider::from_config(
+            connection.workspace_id,
+            connection.id,
+            config,
+        )?)),
+        other => Err(Error::invalid(format!(
+            "email provider {other:?} has no plaintext credentials to reseal"
+        ))),
+    }
+}
+
 /// A local **Maildir** [`EmailProvider`] (SOUL §28). Reads one Maildir directory
 /// (its `new/` + `cur/`) as a single mailbox. Holds the owning workspace +
 /// connection so it can mint the canonical [`Mailbox`]/[`Email`] (mirroring

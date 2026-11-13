@@ -182,7 +182,7 @@ impl Tool for ReadConversationTool {
         let msgs = self
             .store
             .messages()
-            .list_recent(id, limit)
+            .list_recent(ws, id, limit)
             .await
             .map_err(|e| Error::provider(format!("read conversation failed: {e}")))?;
         let messages: Vec<Json> = msgs

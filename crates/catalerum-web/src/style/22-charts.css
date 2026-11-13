@@ -128,10 +128,10 @@
 .eu-notice {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   margin: 0 .7rem .2rem; padding: .4rem .6rem; font-size: .8rem;
-  background: #1c2c4a; color: #cfe0ff; border: 1px solid #2f4a7a; border-radius: 7px;
+  background: var(--info-bg); color: var(--info-fg); border: 1px solid var(--info-border); border-radius: 7px;
 }
 .eu-notice-x {
-  background: none; border: none; color: #cfe0ff; font-size: 1.1rem;
+  background: none; border: none; color: var(--info-fg); font-size: 1.1rem;
   line-height: 1; cursor: pointer; padding: 0 .25rem;
 }
 

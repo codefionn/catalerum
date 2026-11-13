@@ -1232,6 +1232,9 @@ pub struct ToolCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub id: MessageId,
+    /// Owning workspace (the tenancy boundary, SOUL §3.14/§18). Always equal to
+    /// the conversation's workspace; the store derives it on insert.
+    pub workspace_id: WorkspaceId,
     pub conversation_id: ConversationId,
     pub role: MessageRole,
     pub content: String,

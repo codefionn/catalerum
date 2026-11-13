@@ -38,6 +38,33 @@ async fn sqlite_migrates_and_runs_core_repositories() {
         .expect("create conversation");
 
     assert_eq!(conversation.workspace_id, workspace.id);
+    // Messages derive `workspace_id` from their conversation and stay
+    // unreachable from another workspace (SOUL §18).
+    let message = store
+        .messages()
+        .insert(&catalerum_store::NewMessage::text(
+            workspace.id,
+            conversation.id,
+            catalerum_core::model::MessageRole::User,
+            "hi",
+        ))
+        .await
+        .expect("insert message");
+    assert_eq!(message.workspace_id, workspace.id);
+    assert_eq!(
+        store
+            .messages()
+            .get(workspace.id, message.id)
+            .await
+            .expect("get message")
+            .content,
+        "hi"
+    );
+    assert!(store
+        .messages()
+        .get(catalerum_core::WorkspaceId::new(), message.id)
+        .await
+        .is_err());
     assert!(store.password_auth().setup_required().await.unwrap());
     let boot = store
         .password_auth()

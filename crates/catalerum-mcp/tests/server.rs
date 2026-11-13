@@ -73,6 +73,10 @@ impl Tool for EchoTool {
     fn name(&self) -> &str {
         "echo"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Echo the arguments back"
     }
@@ -109,10 +113,13 @@ fn registry() -> ToolRegistry {
     r
 }
 
-/// A server scoped to `capabilities` (`None` → enforcement off; `Some` → deny-by-default).
+/// A server scoped to `capabilities` (`None` → full authority `*:*`, for tests
+/// that exercise the protocol rather than scoping; `Some` → exactly those caps).
 fn server(capabilities: Option<Vec<Capability>>) -> McpServer {
     let ctx = ToolContext {
-        capabilities,
+        capabilities: Some(
+            capabilities.unwrap_or_else(|| vec![Capability::new(Action::Any, Resource::any())]),
+        ),
         ..Default::default()
     };
     McpServer::new(registry(), ctx)

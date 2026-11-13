@@ -664,6 +664,10 @@ mod tests {
         fn name(&self) -> &str {
             "echo"
         }
+        /// Test tool: open.
+        fn required_capability(&self) -> Option<Capability> {
+            None
+        }
         fn parameters_schema(&self) -> Value {
             json!({ "type": "object" })
         }

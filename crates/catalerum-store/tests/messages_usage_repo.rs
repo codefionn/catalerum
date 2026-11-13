@@ -42,7 +42,7 @@ async fn assistant_message_round_trips_token_and_cost_usage() {
     // A user turn carries no usage.
     store
         .messages()
-        .insert(&NewMessage::text(conv.id, MessageRole::User, "hello"))
+        .insert(&NewMessage::text(ws.id, conv.id, MessageRole::User, "hello"))
         .await
         .expect("insert user");
 
@@ -58,6 +58,7 @@ async fn assistant_message_round_trips_token_and_cost_usage() {
     store
         .messages()
         .insert(&NewMessage {
+            workspace_id: ws.id,
             conversation_id: conv.id,
             id: None,
             role: MessageRole::Assistant,
@@ -75,7 +76,7 @@ async fn assistant_message_round_trips_token_and_cost_usage() {
 
     let msgs = store
         .messages()
-        .list_by_conversation(conv.id)
+        .list_by_conversation(ws.id, conv.id)
         .await
         .expect("list");
 

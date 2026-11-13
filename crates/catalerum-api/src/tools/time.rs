@@ -35,6 +35,10 @@ impl Tool for CurrentTimeTool {
     fn name(&self) -> &str {
         "current_time"
     }
+    /// Open: reads the clock.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Get the current date and time (you have no clock — call this instead of \

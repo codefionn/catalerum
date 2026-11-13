@@ -43,6 +43,10 @@ impl Tool for SearchToolsTool {
     fn name(&self) -> &str {
         SEARCH_TOOLS_NAME
     }
+    /// Open: results are filtered by the caller's own capabilities.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Find callable tools — actions you can invoke as tool calls, e.g. web \
          search, fetching a URL, running code in a sandbox, sending a chat \
@@ -116,6 +120,10 @@ pub(crate) struct ListToolsTool {
 impl Tool for ListToolsTool {
     fn name(&self) -> &str {
         LIST_TOOLS_NAME
+    }
+    /// Open: results are filtered by the caller's own capabilities.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
     fn description(&self) -> &str {
         "List every tool you may call — names and one-line descriptions, optionally \
@@ -264,6 +272,10 @@ impl Tool for SearchModelsTool {
     fn name(&self) -> &str {
         SEARCH_MODELS_NAME
     }
+    /// Open: lists the gateway's model catalog, no tenant data.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Search the available LLM models by name or id — use it to find the exact \
          model id to pass to `delegate` (e.g. a cheaper model for a routine subtask) \
@@ -380,6 +392,10 @@ impl Tool for SearchAutomationNodeTypesTool {
     fn name(&self) -> &str {
         "search_automation_node_types"
     }
+    /// Open: static node-type catalog, no tenant data.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Find automation node types by describing what you want (e.g. \"run every \
          morning\", \"when an email arrives\", \"post to a channel\", \"branch on a \
@@ -453,6 +469,10 @@ pub(crate) struct SearchArticlesTool {
 impl Tool for SearchArticlesTool {
     fn name(&self) -> &str {
         "search_articles"
+    }
+    /// Open: searches the built-in recipe corpus, no tenant data.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
     fn description(&self) -> &str {
         "Find internal how-to articles by describing what you want to build (e.g. \
@@ -570,7 +590,7 @@ mod discovery_tests {
 
         // Unrestricted context: both tools, sorted, names + descriptions only.
         let out = tool
-            .invoke(json!({}), &ToolContext::default())
+            .invoke(json!({}), &crate::test_support::full_authority())
             .await
             .unwrap();
         assert_eq!(out["count"], json!(2));
@@ -580,7 +600,7 @@ mod discovery_tests {
 
         // A `filter` substring matches names and descriptions, case-insensitively.
         let out = tool
-            .invoke(json!({ "filter": "CALENDAR" }), &ToolContext::default())
+            .invoke(json!({ "filter": "CALENDAR" }), &crate::test_support::full_authority())
             .await
             .unwrap();
         assert_eq!(out["count"], json!(1));
@@ -608,7 +628,7 @@ mod discovery_tests {
         let out = tool
             .invoke(
                 json!({ "names": ["browse", "nope"] }),
-                &ToolContext::default(),
+                &crate::test_support::full_authority(),
             )
             .await
             .unwrap();

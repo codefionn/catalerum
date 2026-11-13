@@ -16,97 +16,42 @@
 //!
 //! No external `pg_dump`/`pg_restore` — everything runs through the same pool the
 //! repositories use, so a backup needs no extra binary on the host and is
-//! testable against the repo's ephemeral Postgres.
+//! testable against the repo's ephemeral Postgres. The SQL itself lives in
+//! [`catalerum_store::backup`]; this module owns the artifact layout,
+//! compression, checksums and load order.
 
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use futures::StreamExt;
-use sqlx::postgres::PgPoolCopyExt;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 
 use catalerum_core::error::{Error, Result};
 use catalerum_core::provider::StorageBackend;
+use catalerum_store::backup::{self as store_backup, RestoreSession};
+use catalerum_store::StoreError;
 
 use crate::{get_all, put_bytes, Manifest, PgPool, TableManifest};
 
 /// A table to dump: its name and columns in ordinal order.
-pub(crate) struct TableSpec {
-    pub name: String,
-    pub columns: Vec<String>,
-}
+pub(crate) use catalerum_store::backup::TableSpec;
 
-/// Map a sqlx error into the crate error vocabulary (core has no sqlx variant).
-fn sqlx_err(e: sqlx::Error) -> Error {
+/// Map a store error into the crate error vocabulary.
+fn pg_err(e: StoreError) -> Error {
     Error::provider(format!("postgres: {e}"))
 }
 
-/// Quote a SQL identifier for safe interpolation (double-quote, escaping any
-/// embedded `"`). Table/column names come from the catalog, but quoting is still
-/// correct hygiene and survives reserved words / mixed case.
-fn quote_ident(id: &str) -> String {
-    format!("\"{}\"", id.replace('"', "\"\""))
-}
-
-/// A comma-separated, quoted column list for a `COPY` statement.
-fn column_list(columns: &[String]) -> String {
-    columns
-        .iter()
-        .map(|c| quote_ident(c))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 /// Enumerate the user tables to dump: every base table in the `public` schema
-/// except sqlx's `_sqlx_migrations` (the schema — and that table — are recreated
-/// by migrating on boot; the version is captured separately for the guard).
-/// Columns are read in `ordinal_position` order. Identifiers are cast to `text`
-/// so sqlx decodes them without a `name`/domain codec.
+/// except `_sqlx_migrations` (see [`store_backup::list_tables`]).
 pub(crate) async fn list_tables(pool: &PgPool) -> Result<Vec<TableSpec>> {
-    let names: Vec<(String,)> = sqlx::query_as(
-        "SELECT table_name::text \
-           FROM information_schema.tables \
-          WHERE table_schema = 'public' \
-            AND table_type = 'BASE TABLE' \
-            AND table_name <> '_sqlx_migrations' \
-          ORDER BY table_name",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(sqlx_err)?;
-
-    let mut specs = Vec::with_capacity(names.len());
-    for (name,) in names {
-        let columns: Vec<(String,)> = sqlx::query_as(
-            "SELECT column_name::text \
-               FROM information_schema.columns \
-              WHERE table_schema = 'public' AND table_name = $1 \
-              ORDER BY ordinal_position",
-        )
-        .bind(&name)
-        .fetch_all(pool)
-        .await
-        .map_err(sqlx_err)?;
-        specs.push(TableSpec {
-            name,
-            columns: columns.into_iter().map(|(c,)| c).collect(),
-        });
-    }
-    Ok(specs)
+    store_backup::list_tables(pool).await.map_err(pg_err)
 }
 
 /// The Postgres schema version: the max applied `_sqlx_migrations.version`
 /// (`None` if no migrations are recorded). Restore compares it against the live
 /// DB so data never loads into a schema it was not dumped from.
 pub(crate) async fn schema_version(pool: &PgPool) -> Result<Option<i64>> {
-    // `MAX(version)` is NULL on an empty table → the outer Option; a missing
-    // `_sqlx_migrations` would error, but the binary always migrates first.
-    let version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
-        .fetch_one(pool)
-        .await
-        .map_err(sqlx_err)?;
-    Ok(version)
+    store_backup::schema_version(pool).await.map_err(pg_err)
 }
 
 /// Dump one table to `<prefix>/<id>/postgres/<table>.copy.gz` and return its
@@ -120,18 +65,7 @@ pub(crate) async fn dump_table(
     id: &str,
     spec: &TableSpec,
 ) -> Result<TableManifest> {
-    let stmt = format!(
-        "COPY public.{} ({}) TO STDOUT WITH (FORMAT text)",
-        quote_ident(&spec.name),
-        column_list(&spec.columns),
-    );
-    let mut stream = pool.copy_out_raw(&stmt).await.map_err(sqlx_err)?;
-
-    let mut plain = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(sqlx_err)?;
-        plain.extend_from_slice(&bytes);
-    }
+    let plain = store_backup::copy_out(pool, spec).await.map_err(pg_err)?;
     let rows = plain.iter().filter(|&&b| b == b'\n').count() as u64;
 
     let compressed = gzip(&plain)?;
@@ -193,11 +127,11 @@ pub(crate) async fn restore_postgres(
         return Ok(0);
     }
 
-    let mut conn = pool.acquire().await.map_err(sqlx_err)?;
-    let superuser = is_superuser(&mut conn).await?;
+    let mut session = RestoreSession::open(pool).await.map_err(pg_err)?;
+    let superuser = session.is_superuser().await.map_err(pg_err)?;
 
     if superuser && !force_ordered {
-        return restore_with_disabled_triggers(&mut conn, dest, prefix, id, manifest).await;
+        return restore_with_disabled_triggers(session, dest, prefix, id, manifest).await;
     }
 
     // Non-superuser (or forced): load parents-before-children so the FKs that
@@ -208,17 +142,15 @@ pub(crate) async fn restore_postgres(
         .iter()
         .map(|t| t.name.clone())
         .collect();
-    let edges = fk_parent_child_edges(&mut conn).await?;
+    let edges = session.fk_edges().await.map_err(pg_err)?;
     match topo_order(&names, &edges) {
-        Ok(order) => {
-            restore_in_dependency_order(&mut conn, dest, prefix, id, manifest, &order).await
-        }
+        Ok(order) => restore_in_dependency_order(session, dest, prefix, id, manifest, &order).await,
         Err(cycle) => {
             if superuser {
                 // Reachable only via `force_ordered` on a superuser role: a real
                 // FK cycle can't be dependency-ordered, so fall back to the
                 // trigger-off load (a genuine non-superuser can't reach here).
-                restore_with_disabled_triggers(&mut conn, dest, prefix, id, manifest).await
+                restore_with_disabled_triggers(session, dest, prefix, id, manifest).await
             } else {
                 Err(Error::invalid(format!(
                     "cannot restore without superuser: tables [{}] form a foreign-key cycle that \
@@ -235,38 +167,24 @@ pub(crate) async fn restore_postgres(
 /// The superuser fast path: disable FK/user triggers for the load so table order
 /// is irrelevant. Truncate all listed tables together (mutual FKs don't block a
 /// combined truncate), then `COPY … FROM STDIN` each. The session role is
-/// connection-scoped (not transactional), so it is reset before the connection
-/// returns to the pool.
+/// connection-scoped (not transactional), so the commit resets it before the
+/// connection returns to the pool.
 async fn restore_with_disabled_triggers(
-    conn: &mut sqlx::PgConnection,
+    mut session: RestoreSession,
     dest: &dyn StorageBackend,
     prefix: &str,
     id: &str,
     manifest: &Manifest,
 ) -> Result<u64> {
-    sqlx::query("SET session_replication_role = replica")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
-    sqlx::query("BEGIN")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
-    truncate_all(&mut *conn, manifest).await?;
+    session.begin(true).await.map_err(pg_err)?;
+    truncate_all(&mut session, manifest).await?;
 
     let mut total = 0u64;
     for table in &manifest.postgres.tables {
-        total += copy_table_in(&mut *conn, dest, prefix, id, table).await?;
+        total += copy_table_in(&mut session, dest, prefix, id, table).await?;
     }
 
-    sqlx::query("COMMIT")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
-    sqlx::query("SET session_replication_role = DEFAULT")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
+    session.commit().await.map_err(pg_err)?;
     Ok(total)
 }
 
@@ -278,7 +196,7 @@ async fn restore_with_disabled_triggers(
 /// impossible — the combined statement resolves all references atomically and
 /// needs no superuser (only `TRUNCATE` privilege / table ownership).
 async fn restore_in_dependency_order(
-    conn: &mut sqlx::PgConnection,
+    mut session: RestoreSession,
     dest: &dyn StorageBackend,
     prefix: &str,
     id: &str,
@@ -292,11 +210,8 @@ async fn restore_in_dependency_order(
         .map(|t| (t.name.as_str(), t))
         .collect();
 
-    sqlx::query("BEGIN")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
-    truncate_all(&mut *conn, manifest).await?;
+    session.begin(false).await.map_err(pg_err)?;
+    truncate_all(&mut session, manifest).await?;
 
     let mut total = 0u64;
     for name in order {
@@ -304,41 +219,29 @@ async fn restore_in_dependency_order(
         let table = by_name
             .get(name.as_str())
             .expect("dependency order is derived from the manifest table names");
-        total += copy_table_in(&mut *conn, dest, prefix, id, table).await?;
+        total += copy_table_in(&mut session, dest, prefix, id, table).await?;
     }
 
-    sqlx::query("COMMIT")
-        .execute(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
+    session.commit().await.map_err(pg_err)?;
     Ok(total)
 }
 
-/// `TRUNCATE` every dumped table in one statement. `CASCADE` is belt-and-braces
-/// (every referenced table is itself in the list) and the combined form lets
-/// mutually-referencing tables truncate together. Needs `TRUNCATE` privilege
-/// (table ownership), not superuser.
-async fn truncate_all(conn: &mut sqlx::PgConnection, manifest: &Manifest) -> Result<()> {
-    let list = manifest
+/// `TRUNCATE` every dumped table in one statement (see
+/// [`RestoreSession::truncate`]).
+async fn truncate_all(session: &mut RestoreSession, manifest: &Manifest) -> Result<()> {
+    let names: Vec<&str> = manifest
         .postgres
         .tables
         .iter()
-        .map(|t| format!("public.{}", quote_ident(&t.name)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "TRUNCATE {list} RESTART IDENTITY CASCADE"
-    )))
-    .execute(&mut *conn)
-    .await
-    .map_err(sqlx_err)?;
-    Ok(())
+        .map(|t| t.name.as_str())
+        .collect();
+    session.truncate(&names).await.map_err(pg_err)
 }
 
-/// Verify + decompress one table's dump and `COPY … FROM STDIN` it into `conn`.
-/// Returns the table's row count. Shared by both restore strategies.
+/// Verify + decompress one table's dump and `COPY … FROM STDIN` it into the
+/// session. Returns the table's row count. Shared by both restore strategies.
 async fn copy_table_in(
-    conn: &mut sqlx::PgConnection,
+    session: &mut RestoreSession,
     dest: &dyn StorageBackend,
     prefix: &str,
     id: &str,
@@ -357,50 +260,12 @@ async fn copy_table_in(
     }
     let plain = gunzip(&compressed)?;
 
-    let stmt = format!(
-        "COPY public.{} ({}) FROM STDIN WITH (FORMAT text)",
-        quote_ident(&table.name),
-        column_list(&table.columns),
-    );
-    let mut sink = conn.copy_in_raw(&stmt).await.map_err(sqlx_err)?;
-    if !plain.is_empty() {
-        sink.send(plain.as_slice()).await.map_err(sqlx_err)?;
-    }
-    sink.finish().await.map_err(sqlx_err)?;
+    let spec = TableSpec {
+        name: table.name.clone(),
+        columns: table.columns.clone(),
+    };
+    session.copy_in(&spec, &plain).await.map_err(pg_err)?;
     Ok(table.rows)
-}
-
-/// Whether the current session role is a Postgres superuser. `is_superuser` is a
-/// preset (read-only) parameter, so this is one cheap query with no side effects.
-async fn is_superuser(conn: &mut sqlx::PgConnection) -> Result<bool> {
-    let flag: String = sqlx::query_scalar("SELECT current_setting('is_superuser')")
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(sqlx_err)?;
-    Ok(flag.eq_ignore_ascii_case("on"))
-}
-
-/// The foreign-key edges among `public`-schema tables as `(child, parent)` =
-/// (referencing table, referenced table). One row per FK constraint, so a
-/// **composite** FK is already a single edge; a self-referential FK shows up as
-/// `child == parent` and is dropped by [`topo_order`]. Read straight from
-/// `pg_constraint` (contype `'f'`), which needs no special privilege.
-async fn fk_parent_child_edges(conn: &mut sqlx::PgConnection) -> Result<Vec<(String, String)>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT c.relname::text AS child, p.relname::text AS parent \
-           FROM pg_constraint con \
-           JOIN pg_class c ON c.oid = con.conrelid \
-           JOIN pg_class p ON p.oid = con.confrelid \
-           JOIN pg_namespace nc ON nc.oid = c.relnamespace \
-           JOIN pg_namespace np ON np.oid = p.relnamespace \
-          WHERE con.contype = 'f' \
-            AND nc.nspname = 'public' \
-            AND np.nspname = 'public'",
-    )
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(sqlx_err)?;
-    Ok(rows)
 }
 
 /// Topologically sort `names` so every table sorts **after** the tables it
@@ -499,16 +364,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn quotes_identifiers_and_escapes_quotes() {
-        assert_eq!(quote_ident("events"), "\"events\"");
-        assert_eq!(quote_ident("we\"ird"), "\"we\"\"ird\"");
-        assert_eq!(
-            column_list(&["id".into(), "workspace_id".into()]),
-            "\"id\", \"workspace_id\""
-        );
-    }
 
     #[test]
     fn gzip_round_trips() {

@@ -103,7 +103,7 @@ async fn worker_extracts_and_dedups_memories_from_a_conversation() {
     ] {
         store
             .messages()
-            .insert(&NewMessage::text(convo.id, role, text))
+            .insert(&NewMessage::text(ws.id, convo.id, role, text))
             .await
             .expect("message");
     }

@@ -750,6 +750,10 @@ impl Tool for DelegateTool {
     fn name(&self) -> &str {
         DELEGATE_TOOL
     }
+    /// Open: the subagent runs under authority ⊆ the caller's, checked at delegation.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Delegate a focused subtask to a subagent that runs in its own fresh context window and \

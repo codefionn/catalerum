@@ -112,14 +112,18 @@ pub use schedule::{
 // layer (which has no reqwest / no direct catalerum-calendar dep) can drive the
 // /auth/google and /auth/microsoft flows.
 pub use catalerum_calendar::{
-    google_exchange_code, outlook_auth_url, outlook_exchange_code, GoogleCalendarProvider,
-    GoogleTokens, GoogleWatchChannel, OutlookTokens, GOOGLE_AUTH_URL, GOOGLE_CALENDAR_EVENTS_SCOPE,
+    google_exchange_code, outlook_auth_url, outlook_exchange_code, GoogleTokens,
+    GoogleWatchChannel, OutlookTokens, GOOGLE_AUTH_URL, GOOGLE_CALENDAR_EVENTS_SCOPE,
     GOOGLE_CALENDAR_READONLY_SCOPE, OUTLOOK_CALENDAR_SCOPES,
 };
-// Re-export the provider factory so the API's event write-back seam
-// (`calendar_writeback`) can build a live provider without a direct
-// catalerum-calendar dependency, exactly like the OAuth pieces above.
-pub use catalerum_calendar::provider_from_connection_with;
+// Re-export the provider factories so the API's event write-back seam
+// (`calendar_writeback`) and push-channel worker (`google_watch`) can build a
+// live provider behind its trait without a direct catalerum-calendar dependency
+// or naming a concrete backend (SOUL §3.2).
+pub use catalerum_calendar::{
+    provider_from_connection_with,
+    watcher_from_connection_with as calendar_watcher_from_connection_with, CalendarWatcher,
+};
 // Re-export the Gmail read-only scope so the API's /auth/google connect route can
 // request it for `kind=email` (the api has no direct catalerum-email dep).
 pub use catalerum_email::GMAIL_READONLY_SCOPE;

@@ -129,14 +129,14 @@ async fn compact_thread(
             state
                 .store()
                 .messages()
-                .list_recent_after(conversation_id, upto, CHAT_HISTORY_LIMIT)
+                .list_recent_after(workspace_id, conversation_id, upto, CHAT_HISTORY_LIMIT)
                 .await
         }
         None => {
             state
                 .store()
                 .messages()
-                .list_recent(conversation_id, CHAT_HISTORY_LIMIT)
+                .list_recent(workspace_id, conversation_id, CHAT_HISTORY_LIMIT)
                 .await
         }
     }
@@ -190,6 +190,7 @@ mod tests {
     fn msg(role: MessageRole) -> Message {
         Message {
             id: MessageId::new(),
+            workspace_id: WorkspaceId::new(),
             conversation_id: ConversationId::new(),
             role,
             content: String::new(),

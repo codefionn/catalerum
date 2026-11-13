@@ -21,6 +21,10 @@ impl Tool for AskUserTool {
     fn name(&self) -> &str {
         "ask_user"
     }
+    /// Open: asks the caller a question in their own thread.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
 
     // Ungated: asking the human a question grants no authority and touches no
     // resource — the human's *answer* is the only effect, and they choose it.

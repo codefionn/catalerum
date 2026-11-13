@@ -305,14 +305,14 @@ async fn handle_agent_socket(
                 // Keep `last_seen` fresh + refresh the cross-pod ownership key so
                 // other pods keep routing ops here (best-effort).
                 if let Some(caps) = &hello_caps {
-                    let _ = agents.touch_seen(agent.id, caps).await;
+                    let _ = agents.touch_seen(agent.workspace_id, agent.id, caps).await;
                 }
                 registry.announce_ownership(agent.id).await;
             }
             frame = next_agent_frame(&mut stream) => match frame {
                 Some(AgentToServer::Hello { capabilities }) => {
                     // Persist the announced capabilities + register the live conn.
-                    let _ = agents.touch_seen(agent.id, &capabilities).await;
+                    let _ = agents.touch_seen(agent.workspace_id, agent.id, &capabilities).await;
                     close = Some(
                         registry
                             .connect(

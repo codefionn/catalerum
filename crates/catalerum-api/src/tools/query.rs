@@ -108,8 +108,8 @@ impl Tool for QueryStructuredTool {
 
         // Per-domain capability gate (§19): each op reads one domain, so a scoped
         // caller must hold *that* domain's read — a `notes:read`-only grant can't
-        // reach calendar/tasks/storage data through this tool. Skipped when the
-        // caller is unscoped (`capabilities == None`); an unknown op (domain None)
+        // reach calendar/tasks/storage data through this tool. A context without
+        // capabilities holds nothing and is refused; an unknown op (domain None)
         // falls through to the operation `match`'s own error below.
         let domain = match operation.as_str() {
             "recent_notes" | "notes_by_tag" => Some("notes"),
@@ -118,9 +118,9 @@ impl Tool for QueryStructuredTool {
             "recent_objects" | "objects_by_prefix" | "unlabeled_objects" => Some("storage"),
             _ => None,
         };
-        if let (Some(caps), Some(domain)) = (&ctx.capabilities, domain) {
+        if let Some(domain) = domain {
             let required = Capability::new(Action::Read, Resource::domain(domain));
-            if !caps.iter().any(|held| held.covers(&required)) {
+            if !ctx.holds(&required) {
                 return Err(Error::unauthorized(format!(
                     "query_structured `{operation}` requires {domain}:read which the caller's grant does not cover"
                 )));

@@ -1268,7 +1268,7 @@ async fn run_turn(
     // changed while the mobile client was disconnected.
     if frame.regenerate_from.is_none() {
         if let Some(id) = frame.user_message_id {
-            if let Ok(existing) = state.store().messages().get(id).await {
+            if let Ok(existing) = state.store().messages().get(ws_id, id).await {
                 if existing.conversation_id != conversation_id
                     || existing.role != MessageRole::User
                     || existing.content != frame.content
@@ -1323,7 +1323,7 @@ async fn run_turn(
             let anchor = state
                 .store()
                 .messages()
-                .get(anchor_id)
+                .get(ws_id, anchor_id)
                 .await
                 .map_err(|_| ApiError::NotFound)?;
             // Guard: the anchor must be a user message in *this* conversation —
@@ -1338,7 +1338,7 @@ async fn run_turn(
             state
                 .store()
                 .messages()
-                .delete_after(conversation_id, anchor_id)
+                .delete_after(ws_id, conversation_id, anchor_id)
                 .await?;
             // The prune may have deleted the compaction summary's coverage
             // anchor (`summary_upto`, FK `ON DELETE SET NULL`) — re-read so the
@@ -1365,7 +1365,7 @@ async fn run_turn(
                     id: Some(turn_id.message_id),
                     attachments: &frame.attachments,
                     skill: skill_invocation.as_ref(),
-                    ..NewMessage::text(conversation_id, MessageRole::User, &frame.content)
+                    ..NewMessage::text(ws_id, conversation_id, MessageRole::User, &frame.content)
                 })
                 .await?
         }
@@ -1427,14 +1427,14 @@ async fn run_turn(
             state
                 .store()
                 .messages()
-                .list_recent_after(conversation_id, *upto, CHAT_HISTORY_LIMIT)
+                .list_recent_after(ws_id, conversation_id, *upto, CHAT_HISTORY_LIMIT)
                 .await?
         }
         None => {
             state
                 .store()
                 .messages()
-                .list_recent(conversation_id, CHAT_HISTORY_LIMIT)
+                .list_recent(ws_id, conversation_id, CHAT_HISTORY_LIMIT)
                 .await?
         }
     };
@@ -1778,7 +1778,7 @@ async fn run_turn(
         state
             .store()
             .messages()
-            .set_usage(final_id, Some(usage))
+            .set_usage(ws_id, final_id, Some(usage))
             .await?;
     }
 
@@ -1999,7 +1999,7 @@ impl StreamObserver<'_> {
         // boundary, matching what the model sees), then acknowledge, so the client
         // only unmarks a queued line the server has safely stored.
         let (stored, duplicate) = if let Some(id) = frame.user_message_id {
-            match self.state.store().messages().get(id).await {
+            match self.state.store().messages().get(self.ws_id, id).await {
                 Ok(existing)
                     if existing.conversation_id == self.conversation_id
                         && existing.role == MessageRole::User
@@ -2021,6 +2021,7 @@ impl StreamObserver<'_> {
                             attachments: &frame.attachments,
                             skill: skill.as_ref(),
                             ..NewMessage::text(
+                                self.ws_id,
                                 self.conversation_id,
                                 MessageRole::User,
                                 &frame.content,
@@ -2048,7 +2049,12 @@ impl StreamObserver<'_> {
                     .insert(&NewMessage {
                         attachments: &frame.attachments,
                         skill: skill.as_ref(),
-                        ..NewMessage::text(self.conversation_id, MessageRole::User, &frame.content)
+                        ..NewMessage::text(
+                            self.ws_id,
+                            self.conversation_id,
+                            MessageRole::User,
+                            &frame.content,
+                        )
                     })
                     .await
                     .map_err(|e| {
@@ -2143,6 +2149,7 @@ impl TurnObserver for StreamObserver<'_> {
             .store()
             .messages()
             .insert(&NewMessage {
+                workspace_id: self.ws_id,
                 conversation_id: self.conversation_id,
                 id: None,
                 role: message.role,

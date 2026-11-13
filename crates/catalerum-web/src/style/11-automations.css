@@ -4,7 +4,7 @@
   font-size: .62rem; border-radius: 4px; padding: 0 .3rem; text-transform: uppercase;
   letter-spacing: .4px; font-weight: 700;
 }
-.auto-pill-on { color: #b9f6ca; background: #14361f; border: 1px solid #1f5c33; }
+.auto-pill-on { color: var(--ok-fg); background: var(--ok-bg); border: 1px solid var(--ok-border); }
 .auto-pill-off { color: var(--muted); background: var(--panel); border: 1px solid var(--border); }
 .auto-form { flex: 1; display: flex; flex-direction: column; gap: .5rem; padding: 1rem; min-height: 0; overflow-y: auto; }
 .auto-form-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
@@ -71,9 +71,9 @@
   font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
   border-radius: 4px; padding: 0 .35rem; flex-shrink: 0;
 }
-.auto-run-ok { color: #b9f6ca; background: #14361f; }
-.auto-run-fail { color: var(--err-fg); background: #4a1622; }
-.auto-run-running { color: #cfe0ff; background: #1c2c4a; }
+.auto-run-ok { color: var(--ok-fg); background: var(--ok-bg); }
+.auto-run-fail { color: var(--err-fg); background: var(--err-bg); }
+.auto-run-running { color: var(--info-fg); background: var(--info-bg); }
 .auto-run-other { color: var(--muted); background: var(--panel-2); }
 .auto-run-when { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .auto-run-kind {

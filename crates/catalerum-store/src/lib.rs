@@ -8,6 +8,7 @@
 //! - [`rows`] — `sqlx::FromRow` row mirrors and their conversions to
 //!   [`catalerum_core`] domain types.
 //! - [`repo`] — typed CRUD repositories.
+//! - [`backup`] — the dump/restore SQL behind `catalerum-backup` (SOUL §30).
 //! - [`Store`] — an aggregate facade owning one [`sqlx::PgPool`] and handing out
 //!   every repository.
 //!
@@ -31,6 +32,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod backup;
 pub mod error;
 pub mod pool;
 pub mod repo;

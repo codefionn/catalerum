@@ -49,7 +49,7 @@ async fn user_message_round_trips_skill_snapshot() {
         .messages()
         .insert(&NewMessage {
             skill: Some(&snapshot),
-            ..NewMessage::text(conv.id, MessageRole::User, "/summarize the meeting")
+            ..NewMessage::text(ws.id, conv.id, MessageRole::User, "/summarize the meeting")
         })
         .await
         .expect("insert user with skill");
@@ -57,13 +57,13 @@ async fn user_message_round_trips_skill_snapshot() {
     // A plain assistant turn carries none.
     store
         .messages()
-        .insert(&NewMessage::text(conv.id, MessageRole::Assistant, "done"))
+        .insert(&NewMessage::text(ws.id, conv.id, MessageRole::Assistant, "done"))
         .await
         .expect("insert assistant");
 
     let msgs = store
         .messages()
-        .list_by_conversation(conv.id)
+        .list_by_conversation(ws.id, conv.id)
         .await
         .expect("list");
 

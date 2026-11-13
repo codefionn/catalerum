@@ -14,10 +14,16 @@
   --on-accent: #ffffff;
   /* Modal/overlay backdrop scrim. */
   --scrim: rgba(0,0,0,.55);
-  /* Semantic status trios (background · border · foreground). */
+  /* Semantic status trios (background · border · foreground): err, ok, warn, info. */
   --err-bg: #3a1c22; --err-border: #5a2a32; --err-fg: #ff9aa9;
   --ok-bg: #16361f; --ok-border: #1f5e33; --ok-fg: #8ef0b0;
   --warn-bg: #3a2c14; --warn-border: #5a4420; --warn-fg: #ffcf8b;
+  --info-bg: #1c2c4a; --info-border: #2f4a7a; --info-fg: #cfe0ff;
+  /* Terminal output surface (chat terminal pane). */
+  --term-bg: #11151a; --term-fg: #d6deeb;
+  /* HTML mail canvas (email.rs iframe). Deliberately white in every theme:
+     HTML mail is authored against a light background. */
+  --mail-canvas: #ffffff;
   /* Categorical chart ramp (charts.rs). Every chart colour resolves to one of
      these tokens, so a theme switch recolours all charts at once; light/AAA
      themes override the ramp below for legibility. */
@@ -36,6 +42,9 @@
   --err-bg: #2a1820; --err-border: #5a2f3a; --err-fg: #ff9fb0;
   --ok-bg: #0e3022; --ok-border: #1d6f4f; --ok-fg: #74f0c0;
   --warn-bg: #2e2613; --warn-border: #5a4a1f; --warn-fg: #f7d27a;
+  --info-bg: #0f2433; --info-border: #1f4a66; --info-fg: #bfe3ff;
+  --term-bg: #050d0a; --term-fg: #cfe8dc;
+  --mail-canvas: #ffffff;
 }
 
 /* Ember — warm charcoal with amber. */
@@ -48,6 +57,9 @@
   --err-bg: #361a16; --err-border: #5e2f24; --err-fg: #ffab93;
   --ok-bg: #2a3014; --ok-border: #566a26; --ok-fg: #c4e07a;
   --warn-bg: #38280f; --warn-border: #6a4a1e; --warn-fg: #ffcf8b;
+  --info-bg: #1c2230; --info-border: #3a4a66; --info-fg: #cfdcf5;
+  --term-bg: #0f0b07; --term-fg: #ecdfcc;
+  --mail-canvas: #ffffff;
 }
 
 /* Parchment — warm paper, terracotta ink (light). */
@@ -60,6 +72,9 @@
   --err-bg: #f4dad4; --err-border: #d8a89c; --err-fg: #9a3322;
   --ok-bg: #e2efd4; --ok-border: #a9cb8c; --ok-fg: #3a6b22;
   --warn-bg: #f6e9c8; --warn-border: #ddc079; --warn-fg: #7c5a16;
+  --info-bg: #dde7f3; --info-border: #9fb8d8; --info-fg: #234a7a;
+  --term-bg: #ece4d2; --term-fg: #2a261d;
+  --mail-canvas: #ffffff;
   /* Deeper ramp for legibility on the cream surface. */
   --chart-1: #2f6fd0; --chart-2: #1a9e78; --chart-3: #d9791f; --chart-4: #8a4fce;
   --chart-5: #cf3a4c; --chart-6: #b8890f; --chart-7: #1f8aa0; --chart-8: #5a9a2e;
@@ -75,6 +90,9 @@
   --err-bg: #1a0006; --err-border: #ff4d6a; --err-fg: #ff8aa0;
   --ok-bg: #001a0a; --ok-border: #00e676; --ok-fg: #5cffa0;
   --warn-bg: #1a1400; --warn-border: #ffd000; --warn-fg: #ffe066;
+  --info-bg: #000a1a; --info-border: #59a5ff; --info-fg: #a8d0ff;
+  --term-bg: #000000; --term-fg: #ffffff;
+  --mail-canvas: #ffffff;
   /* Bright, maximally-distinct ramp on pure black (AAA). */
   --chart-1: #59a5ff; --chart-2: #38ffa8; --chart-3: #ffab3d; --chart-4: #d59bff;
   --chart-5: #ff6b83; --chart-6: #ffe000; --chart-7: #4be0ff; --chart-8: #b6ff4d;

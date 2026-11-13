@@ -61,14 +61,11 @@ impl Tool for ListConnectionsTool {
                 )))
             }
         };
-        if let Some(caps) = &ctx.capabilities {
-            let required = Capability::new(Action::Read, Resource::domain(domain));
-            if !caps.iter().any(|held| held.covers(&required)) {
-                return Err(Error::unauthorized(format!(
-                    "list_connections `{kind}` requires {domain}:read which the \
-                     caller's grant does not cover"
-                )));
-            }
+        if !ctx.holds(&Capability::new(Action::Read, Resource::domain(domain))) {
+            return Err(Error::unauthorized(format!(
+                "list_connections `{kind}` requires {domain}:read which the \
+                 caller's grant does not cover"
+            )));
         }
         let connections: Vec<_> = self
             .store

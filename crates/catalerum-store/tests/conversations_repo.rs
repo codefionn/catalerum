@@ -170,7 +170,7 @@ async fn conversation_summary_round_trips_and_anchor_delete_nulls_it() {
         ids.push(
             store
                 .messages()
-                .insert(&NewMessage::text(conv.id, role, text))
+                .insert(&NewMessage::text(ws.id, conv.id, role, text))
                 .await
                 .expect("insert")
                 .id,
@@ -195,7 +195,7 @@ async fn conversation_summary_round_trips_and_anchor_delete_nulls_it() {
     // The seed window replays only messages strictly after the anchor.
     let after = store
         .messages()
-        .list_recent_after(conv.id, anchor, 100)
+        .list_recent_after(ws.id, conv.id, anchor, 100)
         .await
         .expect("list after");
     assert_eq!(
@@ -205,7 +205,7 @@ async fn conversation_summary_round_trips_and_anchor_delete_nulls_it() {
     // The bound keeps the most recent, still oldest-first.
     let bounded = store
         .messages()
-        .list_recent_after(conv.id, anchor, 1)
+        .list_recent_after(ws.id, conv.id, anchor, 1)
         .await
         .expect("list after bounded");
     assert_eq!(
@@ -229,7 +229,7 @@ async fn conversation_summary_round_trips_and_anchor_delete_nulls_it() {
     // pointer via the FK — the half-set pair means "no usable summary".
     store
         .messages()
-        .delete(anchor)
+        .delete(ws.id, anchor)
         .await
         .expect("delete anchor");
     let stale = store

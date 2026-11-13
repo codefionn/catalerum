@@ -880,6 +880,10 @@ impl Tool for ListAutomationNodeTypesTool {
     fn name(&self) -> &str {
         "list_automation_node_types"
     }
+    /// Open: static node-type catalog, no tenant data.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "List the automation node types you can place in an automation graph — the \
          triggers (what fires it), actions (what it does), and the code/condition \
@@ -927,6 +931,10 @@ pub(crate) struct GetAutomationNodeTypeTool;
 impl Tool for GetAutomationNodeTypeTool {
     fn name(&self) -> &str {
         "get_automation_node_type"
+    }
+    /// Open: static node-type catalog, no tenant data.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
     fn description(&self) -> &str {
         "Get the full documentation for one automation node type by id (e.g. \

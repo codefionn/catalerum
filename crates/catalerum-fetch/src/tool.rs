@@ -329,8 +329,11 @@ impl Tool for HtmlToMarkdownTool {
         "html_to_markdown"
     }
 
-    // No `required_capability`: a pure transform on data already in hand performs no
-    // egress and reads no resource, so the default (`None`) is correct.
+    /// Open: a pure transform on data already in hand performs no egress and reads
+    /// no resource.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Convert an HTML string to clean Markdown (or plain text). A pure transform \
@@ -431,7 +434,10 @@ impl Tool for ExtractHtmlTool {
         "extract_html"
     }
 
-    // No `required_capability`: pure transform, see [`HtmlToMarkdownTool`].
+    /// Open: pure transform, see [`HtmlToMarkdownTool`].
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Extract parts of an HTML document by CSS selector. A pure transform (no \

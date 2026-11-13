@@ -281,6 +281,7 @@ mod tests {
     fn message(role: MessageRole) -> Message {
         Message {
             id: MessageId::new(),
+            workspace_id: catalerum_core::WorkspaceId::new(),
             conversation_id: ConversationId::new(),
             role,
             content: String::new(),

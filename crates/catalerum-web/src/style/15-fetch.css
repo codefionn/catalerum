@@ -39,9 +39,9 @@
   font-size: .68rem; font-weight: 700; border-radius: 4px; padding: .05rem .4rem;
   text-transform: uppercase; letter-spacing: .4px;
 }
-.fetch-status-ok { color: #b9f6ca; background: #14361f; }
-.fetch-status-redir { color: #cfe0ff; background: #1c2c4a; }
-.fetch-status-bad { color: var(--err-fg); background: #4a1622; }
+.fetch-status-ok { color: var(--ok-fg); background: var(--ok-bg); }
+.fetch-status-redir { color: var(--info-fg); background: var(--info-bg); }
+.fetch-status-bad { color: var(--err-fg); background: var(--err-bg); }
 .fetch-result-url { color: var(--accent); word-break: break-all; text-decoration: none; }
 .fetch-result-url:hover { text-decoration: underline; }
 .fetch-result-ctype { color: var(--muted); }

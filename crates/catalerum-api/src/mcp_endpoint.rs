@@ -85,10 +85,10 @@ impl UiScriptHost for EndpointToolHost {
 }
 
 /// One MCP tool declared by an endpoint script. `invoke` re-enters the script with
-/// `{ method: "tools/call", name, arguments }` and returns its result. It requires
-/// **no capability of its own** — the real authority boundary is the host bridge's
-/// `ctx` when the script calls `search_semantic`, so the outer `McpServer` dispatch
-/// need not (and does not) re-gate it.
+/// `{ method: "tools/call", name, arguments }` and returns its result. It is an
+/// **open** tool — the real authority boundary is the host bridge's `ctx` when the
+/// script calls `search_semantic`; the outer `McpServer` dispatch only checks that
+/// the endpoint holds an authority at all.
 struct ScriptBackedTool {
     tool_name: String,
     description: String,
@@ -101,6 +101,10 @@ struct ScriptBackedTool {
 impl Tool for ScriptBackedTool {
     fn name(&self) -> &str {
         &self.tool_name
+    }
+    /// Open: the endpoint script's own tool calls dispatch under the endpoint's grant.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -186,11 +190,12 @@ pub async fn build_endpoint_server(
         }));
     }
 
-    // The outer server dispatches ScriptBackedTools (which require no capability),
-    // so its own ctx carries no cap set — the endpoint authority lives in the host
-    // bridge's ctx above.
+    // The outer server dispatches ScriptBackedTools (open tools), but dispatch
+    // still needs an authority: it runs under the same endpoint caps as the host
+    // bridge's ctx above, which is where each nested call is actually gated.
     let server_ctx = ToolContext {
         workspace_id: Some(workspace_id),
+        capabilities: host.ctx.capabilities.clone(),
         ..Default::default()
     };
     Ok(McpServer::new(tools, server_ctx).with_server_info(
@@ -212,6 +217,10 @@ mod tests {
         fn name(&self) -> &str {
             "search_semantic"
         }
+        /// Test tool: open.
+        fn required_capability(&self) -> Option<Capability> {
+            None
+        }
         fn parameters_schema(&self) -> Value {
             json!({ "type": "object" })
         }
@@ -226,7 +235,7 @@ mod tests {
         EndpointToolHost {
             registry: reg,
             handle: tokio::runtime::Handle::current(),
-            ctx: ToolContext::default(),
+            ctx: crate::test_support::full_authority(),
             bucket_name: bucket.map(str::to_string),
             key_prefix: prefix.map(str::to_string),
         }

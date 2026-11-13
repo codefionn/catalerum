@@ -37,11 +37,11 @@
 .conv-msg-user { align-self: flex-end; background: var(--user); border-left-color: var(--accent-2); }
 .conv-msg-assistant { border-left-color: var(--accent); }
 .conv-msg-system { border-left-color: var(--muted); opacity: .85; }
-.conv-msg-tool { border-left-color: #8a7; background: var(--panel-2); }
+.conv-msg-tool { border-left-color: var(--ok-border); background: var(--panel-2); }
 .conv-msg-head { display: flex; gap: .5rem; align-items: baseline; }
 .conv-role { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
 .conv-role-user { color: var(--accent); }
-.conv-role-assistant { color: #b9f6ca; }
+.conv-role-assistant { color: var(--ok-fg); }
 .conv-role-system { color: var(--muted); }
 .conv-role-tool { color: var(--ok-fg); }
 .conv-role-other { color: var(--muted); }

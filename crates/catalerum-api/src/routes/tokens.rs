@@ -99,7 +99,11 @@ fn resolve_ttl_days(requested: Option<i64>) -> i64 {
 
 async fn list_tokens(State(state): State<AppState>, auth: Auth) -> ApiResult<Json<Vec<TokenView>>> {
     let p = auth.principal();
-    let sessions = state.store().sessions().list_by_user(p.user_id).await?;
+    let sessions = state
+        .store()
+        .sessions()
+        .list_by_user(p.workspace_id, p.user_id)
+        .await?;
     // Resolve grant ids → names for this workspace so the listing can label a
     // scoped token. Best-effort: if the grants list can't be read, names are
     // simply omitted (the token still lists). Self-scoped throughout.
@@ -112,9 +116,6 @@ async fn list_tokens(State(state): State<AppState>, auth: Auth) -> ApiResult<Jso
         .unwrap_or_default();
     let views = sessions
         .into_iter()
-        // Self-scoped: only this workspace's tokens (the session list is per-user
-        // across all workspaces the user belongs to).
-        .filter(|s| s.workspace_id() == p.workspace_id)
         .map(|s| TokenView {
             id: s.id,
             grant: s.grant_id().and_then(|gid| grant_names.get(&gid).cloned()),
@@ -220,11 +221,14 @@ async fn revoke_token(
     let sessions = state.store().sessions();
     // Resolve the token and confirm it belongs to the caller before deleting —
     // a token for another user/workspace is reported as not-found (never leaked).
-    let session = sessions.get(id).await.map_err(|_| ApiError::NotFound)?;
-    if session.user_id() != p.user_id || session.workspace_id() != p.workspace_id {
+    let session = sessions
+        .get(p.workspace_id, id)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    if session.user_id() != p.user_id {
         return Err(ApiError::NotFound);
     }
-    sessions.delete(id).await?;
+    sessions.delete(p.workspace_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -44,10 +44,12 @@ pub struct ToolContext {
     /// The grant authorizing the call (SOUL §19).
     pub grant_id: Option<GrantId>,
     /// The caller's granted capabilities, for **per-action enforcement** at
-    /// dispatch (SOUL §19). `None` disables the check (an internal/legacy caller
-    /// trusted by construction); `Some(caps)` makes dispatch deny-by-default —
-    /// a tool's [`required_capability`](Tool::required_capability) must be
-    /// covered by one of `caps`.
+    /// dispatch (SOUL §19). Deny-by-default: `None` holds no authority, so
+    /// [`dispatch`](ToolRegistry::dispatch) refuses every call; `Some(caps)`
+    /// lets a call through only when one of `caps` covers the tool's
+    /// [`required_capability`](Tool::required_capability). A caller that really
+    /// is trusted states it by passing full authority (`*:*`), never by leaving
+    /// this unset.
     pub capabilities: Option<Vec<Capability>>,
     /// When set (from a grant's `dry_run` constraint, SOUL §19), dispatch
     /// **authorizes the call but does not execute it** — the tool's side effect is
@@ -88,7 +90,8 @@ pub struct ToolContext {
 }
 
 impl ToolContext {
-    /// A context scoped to just a workspace.
+    /// A context scoped to just a workspace. It carries no capabilities, so it
+    /// can invoke a tool directly but cannot [`dispatch`](ToolRegistry::dispatch).
     #[must_use]
     pub fn for_workspace(workspace_id: WorkspaceId) -> Self {
         Self {
@@ -96,6 +99,44 @@ impl ToolContext {
             ..Default::default()
         }
     }
+
+    /// Whether this context's authority covers `required` (SOUL §19).
+    /// Deny-by-default: a context without capabilities holds nothing. Tools that
+    /// check an argument-dependent capability themselves (`db:read@<conn>`,
+    /// `skill:use@<name>`) use this so they fail closed the same way dispatch does.
+    #[must_use]
+    pub fn holds(&self, required: &Capability) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|caps| caps.iter().any(|held| held.covers(required)))
+    }
+}
+
+/// The dispatch-time authorization check (SOUL §19), shared by
+/// [`ToolRegistry::dispatch`] and the discovery surfaces that must filter
+/// exactly as dispatch would. A context without capabilities is refused
+/// outright; an open tool (`required_capability() == None`) passes for any
+/// caller that holds an authority; a gated tool needs a covering capability.
+///
+/// # Errors
+/// [`Error::Unauthorized`] naming what was missing.
+pub fn authorize(tool: &dyn Tool, ctx: &ToolContext) -> Result<()> {
+    let name = tool.name();
+    if ctx.capabilities.is_none() {
+        return Err(Error::Unauthorized(format!(
+            "tool `{name}` was called without an authority (no capabilities in context)"
+        )));
+    }
+    if let Some(required) = tool.required_capability() {
+        if !ctx.holds(&required) {
+            return Err(Error::Unauthorized(format!(
+                "tool `{name}` requires {}:{} which the caller's grant does not cover",
+                required.resource.domain,
+                action_token(required.action),
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl std::fmt::Debug for ToolContext {
@@ -200,12 +241,16 @@ pub trait Tool: Send + Sync {
     }
 
     /// The capability this tool requires to run (SOUL §19), e.g.
-    /// `Capability::new(Action::Write, Resource::domain("notes"))`. `None` means
-    /// the tool is ungated. Enforced at [`ToolRegistry::dispatch`] when the
-    /// caller's capabilities are known ([`ToolContext::capabilities`] is `Some`).
-    fn required_capability(&self) -> Option<Capability> {
-        None
-    }
+    /// `Capability::new(Action::Write, Resource::domain("notes"))`, enforced at
+    /// [`ToolRegistry::dispatch`] (see [`authorize`]).
+    ///
+    /// There is deliberately no default: every tool states its requirement.
+    /// `None` declares the tool **open**: any caller holding an authority may
+    /// run it, so return `None` only when the tool reaches no tenant data on its
+    /// own (a static catalog, the caller's own thread), re-dispatches every
+    /// nested call through the gate, or checks an argument-dependent capability
+    /// itself with [`ToolContext::holds`]. Say which in a comment at the impl.
+    fn required_capability(&self) -> Option<Capability>;
 
     /// JSON Schema describing the `args` object accepted by [`invoke`](Tool::invoke).
     fn parameters_schema(&self) -> Json;
@@ -434,13 +479,10 @@ impl ToolRegistry {
     }
 
     /// Dispatch a tool call by name. Returns [`Error::NotFound`] if no such tool
-    /// is registered, or [`Error::Unauthorized`] if the caller's capabilities
-    /// (when supplied) don't cover the tool's [`required_capability`].
-    ///
-    /// Enforcement is **deny-by-default but opt-in**: it runs only when
-    /// `ctx.capabilities` is `Some` (a real caller's grant). A `None` context
-    /// skips the check — for internal/trusted callers and to keep the workspace
-    /// boundary the sole scope where capabilities aren't yet wired (SOUL §19).
+    /// is registered, or [`Error::Unauthorized`] if [`authorize`] refuses it:
+    /// the context carries no capabilities, or they don't cover the tool's
+    /// [`required_capability`](Tool::required_capability). Enforcement is
+    /// always on (SOUL §19 deny-by-default).
     pub async fn dispatch(&self, name: &str, args: Json, ctx: &ToolContext) -> Result<Json> {
         self.dispatch_inner(name, args, ctx, None).await
     }
@@ -467,15 +509,7 @@ impl ToolRegistry {
         input_modalities: Option<&[String]>,
     ) -> Result<Json> {
         let tool = self.get(name).ok_or(Error::NotFound)?;
-        if let (Some(caps), Some(required)) = (&ctx.capabilities, tool.required_capability()) {
-            if !caps.iter().any(|held| held.covers(&required)) {
-                return Err(Error::Unauthorized(format!(
-                    "tool `{name}` requires {}:{} which the caller's grant does not cover",
-                    required.resource.domain,
-                    action_token(required.action),
-                )));
-            }
-        }
+        authorize(tool.as_ref(), ctx)?;
         // A profile's programmable tool guard (SOUL §19) runs *after* the capability
         // check, so it can only tighten authority. A call-phase deny short-circuits
         // before the side effect fires (the model sees an error tool result); a
@@ -552,6 +586,18 @@ impl std::fmt::Debug for ToolRegistry {
 mod tests {
     use super::*;
 
+    /// A context holding full authority (`*:*`), for tests that exercise
+    /// dispatch mechanics rather than the capability check.
+    fn full_authority() -> ToolContext {
+        ToolContext {
+            capabilities: Some(vec![Capability::new(
+                crate::capability::Action::Any,
+                crate::capability::Resource::any(),
+            )]),
+            ..Default::default()
+        }
+    }
+
     struct EchoTool;
 
     #[async_trait]
@@ -561,6 +607,9 @@ mod tests {
         }
         fn description(&self) -> &str {
             "returns its args"
+        }
+        fn required_capability(&self) -> Option<Capability> {
+            None
         }
         fn parameters_schema(&self) -> Json {
             serde_json::json!({ "type": "object" })
@@ -621,7 +670,7 @@ mod tests {
                 .dispatch(
                     "echo",
                     serde_json::json!({ "x": 1 }),
-                    &ToolContext::default(),
+                    &full_authority(),
                 )
                 .await
                 .unwrap();
@@ -661,6 +710,9 @@ mod tests {
             fn name(&self) -> &str {
                 "probe"
             }
+            fn required_capability(&self) -> Option<Capability> {
+                None
+            }
             fn parameters_schema(&self) -> Json {
                 serde_json::json!({ "type": "object" })
             }
@@ -674,7 +726,7 @@ mod tests {
         let mut reg = ToolRegistry::new();
         reg.register(Arc::new(RegistryProbe));
         futures::executor::block_on(async {
-            let ctx = ToolContext::default();
+            let ctx = full_authority();
             assert!(ctx.registry.is_none(), "callers never pre-set the registry");
             let out = reg
                 .dispatch("probe", serde_json::json!({}), &ctx)
@@ -731,11 +783,15 @@ mod tests {
             reg.register(Arc::new(GatedTool));
             let args = serde_json::json!({});
 
-            // No capabilities supplied → enforcement is off (legacy/internal caller).
-            assert!(reg
+            // No capabilities supplied → no authority, denied (deny-by-default).
+            let err = reg
                 .dispatch("gated", args.clone(), &ToolContext::default())
                 .await
-                .is_ok());
+                .unwrap_err();
+            assert!(
+                matches!(err, Error::Unauthorized(_)),
+                "a context without capabilities must be denied, got {err:?}"
+            );
 
             // Caps that DON'T cover notes:write → denied.
             let read_only = ToolContext {
@@ -795,6 +851,27 @@ mod tests {
             self.0.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(serde_json::json!({ "committed": true }))
         }
+    }
+
+    #[test]
+    fn open_tool_needs_an_authority_but_no_specific_capability() {
+        futures::executor::block_on(async {
+            let mut reg = ToolRegistry::new();
+            reg.register(Arc::new(EchoTool));
+            let args = serde_json::json!({ "x": 1 });
+            // No authority at all → denied, even for an open tool.
+            let err = reg
+                .dispatch("echo", args.clone(), &ToolContext::default())
+                .await
+                .unwrap_err();
+            assert!(matches!(err, Error::Unauthorized(_)), "got {err:?}");
+            // Any authority (even an empty grant) runs an open tool.
+            let empty = ToolContext {
+                capabilities: Some(Vec::new()),
+                ..Default::default()
+            };
+            assert_eq!(reg.dispatch("echo", args.clone(), &empty).await.unwrap(), args);
+        });
     }
 
     #[test]
@@ -953,7 +1030,7 @@ mod tests {
             reg.register(Arc::new(EchoTool));
             let ctx = ToolContext {
                 gate: Some(Arc::new(AllowGate)),
-                ..Default::default()
+                ..full_authority()
             };
             let out = reg
                 .dispatch("echo", serde_json::json!({ "x": 1 }), &ctx)

@@ -54,13 +54,14 @@ impl SessionRepo {
         Ok(row)
     }
 
-    /// Fetch a session by id.
-    pub async fn get(&self, id: Uuid) -> Result<Session> {
+    /// Fetch a session by id, workspace-scoped.
+    pub async fn get(&self, workspace_id: WorkspaceId, id: Uuid) -> Result<Session> {
         let row: Session = sqlx::query_as(
             "SELECT id, workspace_id, user_id, token_hash, grant_id, created_at, expires_at
-             FROM sessions WHERE id = $1",
+             FROM sessions WHERE id = $1 AND workspace_id = $2",
         )
         .bind(id)
+        .bind(workspace_id.into_uuid())
         .fetch_one(&self.pool)
         .await
         .map_err(map)?;
@@ -69,6 +70,9 @@ impl SessionRepo {
 
     /// Look up a session by its `token_hash` (the auth hot path). Expired
     /// sessions are excluded.
+    ///
+    /// Not workspace-filtered: this is how a bearer token resolves to its
+    /// workspace in the first place, so no workspace is known yet.
     pub async fn get_by_token_hash(&self, token_hash: &str) -> Result<Session> {
         let row: Session = sqlx::query_as(
             "SELECT id, workspace_id, user_id, token_hash, grant_id, created_at, expires_at
@@ -81,13 +85,21 @@ impl SessionRepo {
         Ok(row)
     }
 
-    /// List a user's active (non-expired) sessions.
-    pub async fn list_by_user(&self, user_id: UserId) -> Result<Vec<Session>> {
+    /// List a user's active (non-expired) sessions in one workspace. A user
+    /// belonging to several workspaces holds sessions in each; only
+    /// `workspace_id`'s are returned.
+    pub async fn list_by_user(
+        &self,
+        workspace_id: WorkspaceId,
+        user_id: UserId,
+    ) -> Result<Vec<Session>> {
         let rows: Vec<Session> = sqlx::query_as(
             "SELECT id, workspace_id, user_id, token_hash, grant_id, created_at, expires_at
-             FROM sessions WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP
+             FROM sessions
+             WHERE workspace_id = $1 AND user_id = $2 AND expires_at > CURRENT_TIMESTAMP
              ORDER BY created_at DESC",
         )
+        .bind(workspace_id.into_uuid())
         .bind(user_id.into_uuid())
         .fetch_all(&self.pool)
         .await
@@ -95,10 +107,11 @@ impl SessionRepo {
         Ok(rows)
     }
 
-    /// Revoke a single session by id.
-    pub async fn delete(&self, id: Uuid) -> Result<()> {
-        let res = sqlx::query("DELETE FROM sessions WHERE id = $1")
+    /// Revoke a single session by id, workspace-scoped.
+    pub async fn delete(&self, workspace_id: WorkspaceId, id: Uuid) -> Result<()> {
+        let res = sqlx::query("DELETE FROM sessions WHERE id = $1 AND workspace_id = $2")
             .bind(id)
+            .bind(workspace_id.into_uuid())
             .execute(&self.pool)
             .await
             .map_err(map)?;
@@ -108,7 +121,8 @@ impl SessionRepo {
         Ok(())
     }
 
-    /// Garbage-collect expired sessions. Returns the number deleted.
+    /// Garbage-collect expired sessions. Returns the number deleted. Global
+    /// housekeeping across all workspaces, run by the server, never a tenant.
     pub async fn delete_expired(&self) -> Result<u64> {
         let res = sqlx::query("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP")
             .execute(&self.pool)
@@ -164,6 +178,8 @@ impl LoginTokenRepo {
     }
 
     /// Look up a login token by its `token_hash`, or [`StoreError::NotFound`].
+    /// Not workspace-filtered: redeeming the token is what establishes the
+    /// workspace.
     /// Returns the row regardless of consumption/expiry so callers can
     /// disambiguate "unknown" from "already consumed" / "expired".
     pub async fn get_by_token_hash(&self, token_hash: &str) -> Result<LoginToken> {

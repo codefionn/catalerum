@@ -124,6 +124,8 @@ mod subagent_runs;
 mod terminal;
 #[cfg(test)]
 mod test_db;
+#[cfg(test)]
+mod test_support;
 mod tool_gate;
 mod tool_index;
 mod tools;

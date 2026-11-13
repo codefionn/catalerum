@@ -1453,6 +1453,10 @@ impl Tool for UpstreamTool {
     fn name(&self) -> &str {
         UPSTREAM_TOOL
     }
+    /// Open: child-run plumbing; nested calls dispatch under the parent context.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         &self.description
@@ -1880,7 +1884,7 @@ mod tests {
             context,
             runner: Arc::new(ScriptCodeRunner::new()),
             parent_registry,
-            parent_ctx: ToolContext::default(),
+            parent_ctx: crate::test_support::full_authority(),
             cancel: CancellationToken::new(),
         }
     }
@@ -1953,7 +1957,7 @@ mod tests {
             .dispatch(
                 "computer_exec",
                 json!({ "agent": "another-host", "value": 7 }),
-                &ToolContext::default(),
+                &crate::test_support::full_authority(),
             )
             .await
             .expect("pinned dispatch");
@@ -1977,7 +1981,7 @@ mod tests {
         let out = upstream
             .invoke(
                 json!({ "request": { "key": "public" } }),
-                &ToolContext::default(),
+                &crate::test_support::full_authority(),
             )
             .await
             .expect("pure upstream handler");
@@ -1998,7 +2002,7 @@ mod tests {
             Some(parent.clone()),
         );
         let out = upstream
-            .invoke(json!({ "request": { "id": 42 } }), &ToolContext::default())
+            .invoke(json!({ "request": { "id": 42 } }), &crate::test_support::full_authority())
             .await
             .expect("parent redispatch");
         assert_eq!(out["response"]["value"], 42);
@@ -2009,7 +2013,7 @@ mod tests {
             Some(parent.clone()),
         );
         let err = recursive
-            .invoke(json!({ "request": "recurse" }), &ToolContext::default())
+            .invoke(json!({ "request": "recurse" }), &crate::test_support::full_authority())
             .await
             .expect_err("recursive subagent must be denied");
         assert!(err.to_string().contains("nested Boa/subagent execution"));
@@ -2021,7 +2025,7 @@ mod tests {
         );
         denied.parent_ctx.capabilities = Some(Vec::new());
         let err = denied
-            .invoke(json!({ "request": "secret" }), &ToolContext::default())
+            .invoke(json!({ "request": "secret" }), &crate::test_support::full_authority())
             .await
             .expect_err("parent capability check must still apply");
         assert!(err.to_string().contains("caller's grant does not cover"));

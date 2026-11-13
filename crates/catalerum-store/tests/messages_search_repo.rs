@@ -55,7 +55,7 @@ async fn message_search_is_substring_scoped_and_titled() {
     ] {
         store
             .messages()
-            .insert(&NewMessage::text(conv.id, role, content))
+            .insert(&NewMessage::text(ws.id, conv.id, role, content))
             .await
             .expect("insert");
     }
@@ -63,6 +63,7 @@ async fn message_search_is_substring_scoped_and_titled() {
     store
         .messages()
         .insert(&NewMessage::text(
+            other.id,
             other_conv.id,
             MessageRole::User,
             "secret berlin plans",

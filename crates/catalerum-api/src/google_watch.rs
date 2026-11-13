@@ -34,7 +34,7 @@ use catalerum_automation::Trigger;
 use catalerum_core::id::ConnectionId;
 use catalerum_core::model::Connection;
 use catalerum_core::WorkspaceId;
-use catalerum_ingest::{GoogleCalendarProvider, GoogleWatchChannel};
+use catalerum_ingest::{CalendarWatcher, GoogleWatchChannel};
 
 use crate::google_channel_link::ChannelClaims;
 use crate::state::AppState;
@@ -278,7 +278,9 @@ impl GoogleWatchWorker {
             }
         }
 
-        // Build the provider (OAuth token seam from the encrypted secret store).
+        // Build the push-channel watcher (OAuth token seam from the encrypted secret
+        // store) through the calendar factory, so this worker depends only on the
+        // `CalendarWatcher` trait, never the concrete Google backend (SOUL §3.2).
         let connection_dom: Connection = match row.clone().try_into() {
             Ok(c) => c,
             Err(e) => {
@@ -294,7 +296,11 @@ impl GoogleWatchWorker {
             debug!(%connection_id, "google watch: no OAuth seam (missing credential_ref?); skipping");
             return;
         };
-        let provider = match GoogleCalendarProvider::from_config(ws, connection_id, &config, seam) {
+        let provider = match catalerum_ingest::calendar_watcher_from_connection_with(
+            &connection_dom,
+            &config,
+            Some(seam),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, %connection_id, "google watch: building provider failed");
@@ -303,10 +309,10 @@ impl GoogleWatchWorker {
         };
 
         if wanted {
-            self.ensure_watch(ws, connection_id, &provider, address, existing, now)
+            self.ensure_watch(ws, connection_id, provider.as_ref(), address, existing, now)
                 .await;
         } else if let Some(old) = existing {
-            self.stop_and_clear(ws, connection_id, &provider, &old)
+            self.stop_and_clear(ws, connection_id, provider.as_ref(), &old)
                 .await;
         }
     }
@@ -317,7 +323,7 @@ impl GoogleWatchWorker {
         &self,
         ws: WorkspaceId,
         connection_id: ConnectionId,
-        provider: &GoogleCalendarProvider,
+        provider: &dyn CalendarWatcher,
         address: &str,
         existing: Option<GoogleWatchChannel>,
         now: DateTime<Utc>,
@@ -373,7 +379,7 @@ impl GoogleWatchWorker {
         &self,
         ws: WorkspaceId,
         connection_id: ConnectionId,
-        provider: &GoogleCalendarProvider,
+        provider: &dyn CalendarWatcher,
         old: &GoogleWatchChannel,
     ) {
         if let Err(e) = provider.stop_watch(&old.channel_id, &old.resource_id).await {

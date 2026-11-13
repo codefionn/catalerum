@@ -690,17 +690,18 @@ fn merge_capabilities(base: Vec<Capability>, extra: Vec<Capability>) -> Vec<Capa
 }
 
 /// §19 attenuation: every capability must be ⊆ the caller's own authority. A
-/// context without capabilities is a trusted internal caller (dispatch enforcement
-/// is off for it too).
+/// context without capabilities holds nothing, so it can confer nothing.
 fn check_within_caller(ctx: &ToolContext, caps: &[Capability]) -> Result<()> {
-    if let Some(held) = &ctx.capabilities {
-        for c in caps {
-            if attenuate(held, c).is_err() {
-                return Err(Error::unauthorized(format!(
-                    "`{}` exceeds your own authority; a grant can only confer what you hold",
-                    c.to_token()
-                )));
-            }
+    let held = ctx
+        .capabilities
+        .as_deref()
+        .ok_or_else(|| Error::unauthorized("no authority to confer capabilities from"))?;
+    for c in caps {
+        if attenuate(held, c).is_err() {
+            return Err(Error::unauthorized(format!(
+                "`{}` exceeds your own authority; a grant can only confer what you hold",
+                c.to_token()
+            )));
         }
     }
     Ok(())

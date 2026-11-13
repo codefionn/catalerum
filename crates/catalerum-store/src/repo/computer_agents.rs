@@ -60,6 +60,7 @@ impl ComputerAgentRepo {
 
     /// Look up an **active** (non-revoked) agent by its token hash — the WS
     /// handshake path. A revoked or unknown token yields [`StoreError::NotFound`].
+    /// Not workspace-filtered: the token is what identifies the agent's workspace.
     pub async fn get_active_by_token_hash(&self, token_hash: &str) -> Result<ComputerAgent> {
         let row: ComputerAgentRow = sqlx::query_as(assert_sql_safe!(
             "SELECT {COMPUTER_AGENT_COLS} FROM computer_agents
@@ -106,23 +107,30 @@ impl ComputerAgentRepo {
 
     /// Record a live connection: refresh the announced capabilities + denormalised
     /// platform and bump `last_seen_at`. Called on connect and on each heartbeat.
+    /// Workspace-scoped; an id outside `workspace_id` is
+    /// [`StoreError::NotFound`].
     pub async fn touch_seen(
         &self,
+        workspace_id: WorkspaceId,
         id: ComputerAgentId,
         capabilities: &ComputerCapabilities,
     ) -> Result<()> {
         let platform = computer_platform_to_text(capabilities.platform)?;
-        sqlx::query(
+        let res = sqlx::query(
             "UPDATE computer_agents
                 SET capabilities = $2, platform = $3, last_seen_at = CURRENT_TIMESTAMP
-             WHERE id = $1",
+             WHERE id = $1 AND workspace_id = $4",
         )
         .bind(id.into_uuid())
         .bind(Json(capabilities))
         .bind(platform)
+        .bind(workspace_id.into_uuid())
         .execute(&self.pool)
         .await
         .map_err(map)?;
+        if res.rows_affected() == 0 {
+            return Err(StoreError::NotFound);
+        }
         Ok(())
     }
 

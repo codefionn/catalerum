@@ -54,8 +54,8 @@ use catalerum_core::provider::{PutMeta, StorageBackend};
 
 pub use worker::BackupWorker;
 
-/// sqlx's pooled Postgres handle — the dump/restore source.
-pub use sqlx::PgPool;
+/// The pooled Postgres handle — the dump/restore source.
+pub use catalerum_store::PgPool;
 
 /// The on-disk backup format version. v2 added the per-store blob layout
 /// (`objects/<store>/<key>`); restore still reads a v1 flat `objects/<key>`

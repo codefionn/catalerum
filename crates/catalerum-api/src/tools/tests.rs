@@ -1523,15 +1523,17 @@ async fn query_structured_enforces_per_domain_read_capability() {
         Error::Unauthorized(_)
     ));
 
-    // An unscoped caller (no capabilities) may run any op (full authority).
+    // A caller without capabilities holds no authority (deny-by-default).
     let unscoped = ToolContext {
         workspace_id: Some(ws.id),
         ..Default::default()
     };
-    assert!(tool
-        .invoke(json!({ "operation": "upcoming_events" }), &unscoped)
-        .await
-        .is_ok());
+    assert!(matches!(
+        tool.invoke(json!({ "operation": "upcoming_events" }), &unscoped)
+            .await
+            .unwrap_err(),
+        Error::Unauthorized(_)
+    ));
 }
 
 #[tokio::test]
@@ -1598,7 +1600,7 @@ async fn query_structured_object_operations_carry_store_and_labels() {
     };
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
 
     // recent_objects → summaries carry store + labels (the labelled file its
@@ -1643,7 +1645,7 @@ async fn query_structured_object_operations_carry_store_and_labels() {
     // §18: another workspace sees nothing.
     let other = ToolContext {
         workspace_id: Some(WorkspaceId::new()),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
     let none = tool
         .invoke(json!({ "operation": "unlabeled_objects" }), &other)
@@ -1687,7 +1689,7 @@ async fn query_structured_notes_operations_are_workspace_scoped() {
     };
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
 
     // recent_notes returns both, most-recent first (Standup created last).
@@ -1718,7 +1720,7 @@ async fn query_structured_notes_operations_are_workspace_scoped() {
     // Another workspace sees none of these notes (§18).
     let other = ToolContext {
         workspace_id: Some(WorkspaceId::new()),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
     let none = tool
         .invoke(json!({ "operation": "recent_notes" }), &other)
@@ -1808,7 +1810,7 @@ async fn query_structured_events_in_range_filters_to_the_window() {
     };
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
 
     // A January window catches only "Kickoff".
@@ -2562,7 +2564,7 @@ async fn query_structured_task_operations_carry_board_and_filter_status() {
     };
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
 
     // open_tasks excludes the Done task; the in_progress one carries its
@@ -2625,7 +2627,7 @@ async fn query_structured_task_operations_carry_board_and_filter_status() {
     // Another workspace sees no tasks (§18).
     let other = ToolContext {
         workspace_id: Some(WorkspaceId::new()),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
     let none = tool
         .invoke(json!({ "operation": "open_tasks" }), &other)
@@ -3310,16 +3312,18 @@ async fn tool_dispatch_enforces_role_capabilities() {
         .await
         .is_ok());
 
-    // No capabilities supplied → enforcement off (legacy path still works).
+    // No capabilities supplied → no authority, denied (deny-by-default).
     let no_caps = ToolContext {
         workspace_id: Some(ws.id),
         user_id: Some(user),
         ..Default::default()
     };
-    assert!(registry
-        .dispatch("create_note", json!({ "title": "y" }), &no_caps)
-        .await
-        .is_ok());
+    assert!(matches!(
+        registry
+            .dispatch("create_note", json!({ "title": "y" }), &no_caps)
+            .await,
+        Err(Error::Unauthorized(_))
+    ));
 }
 
 #[tokio::test]
@@ -4131,7 +4135,7 @@ async fn search_messages_finds_chat_by_content() {
     ] {
         store
             .messages()
-            .insert(&NewMessage::text(conv.id, role, content))
+            .insert(&NewMessage::text(ws.id, conv.id, role, content))
             .await
             .expect("insert");
     }
@@ -4228,7 +4232,7 @@ async fn read_conversation_returns_the_thread_oldest_first_and_is_tenant_scoped(
     ] {
         store
             .messages()
-            .insert(&NewMessage::text(conv.id, role, content))
+            .insert(&NewMessage::text(ws.id, conv.id, role, content))
             .await
             .expect("insert");
     }
@@ -4936,20 +4940,26 @@ async fn skill_tools_enforce_per_skill_capability_selectors() {
         Err(Error::Invalid(_))
     ));
 
-    // No capabilities supplied → enforcement off (internal/legacy caller path).
+    // No capabilities supplied → no authority, denied (deny-by-default).
     let no_caps = ctx(None);
-    assert!(registry
-        .dispatch("use_skill", use_skill("summarize"), &no_caps)
-        .await
-        .is_ok());
-    assert!(registry
-        .dispatch("list_skills", json!({}), &no_caps)
-        .await
-        .is_ok());
+    assert!(matches!(
+        registry
+            .dispatch("use_skill", use_skill("summarize"), &no_caps)
+            .await,
+        Err(Error::Unauthorized(_))
+    ));
+    assert!(matches!(
+        registry.dispatch("list_skills", json!({}), &no_caps).await,
+        Err(Error::Unauthorized(_))
+    ));
 
-    // Missing workspace is rejected.
+    // Missing workspace is rejected, even with full authority.
     assert!(registry
-        .dispatch("use_skill", use_skill("summarize"), &ToolContext::default())
+        .dispatch(
+            "use_skill",
+            use_skill("summarize"),
+            &crate::test_support::full_authority()
+        )
         .await
         .is_err());
 }
@@ -5413,7 +5423,7 @@ async fn connection_tools_create_list_and_gate_by_kind() {
         .expect("ws");
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
 
     // Register a JMAP source (the Fastmail shape) through the tool.
@@ -6048,6 +6058,10 @@ fn run_javascript_registry() -> ToolRegistry {
     impl Tool for ProbeEchoTool {
         fn name(&self) -> &str {
             "probe_echo"
+        }
+        /// Test tool: open.
+        fn required_capability(&self) -> Option<Capability> {
+            None
         }
         fn parameters_schema(&self) -> Json {
             json!({ "type": "object", "properties": {} })
@@ -6945,7 +6959,7 @@ async fn automation_debug_tools_diagnose_and_fix_run_authority() {
     registry.register(Arc::new(CreateNoteToolProbe));
     let ctx = ToolContext {
         workspace_id: Some(ws.id),
-        ..Default::default()
+        ..crate::test_support::full_authority()
     };
     let name = format!("cve-{}", uuid::Uuid::new_v4());
 

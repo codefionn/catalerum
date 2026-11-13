@@ -442,13 +442,13 @@ fn classify(sql: &str) -> SqlClass {
     }
 }
 
-/// Deny-by-default per-call capability check. `None` capabilities = a trusted
-/// internal caller (the framework convention, SOUL §19); `Some` = enforce.
+/// Deny-by-default per-call capability check (SOUL §19): a context without
+/// capabilities holds nothing.
 fn enforce(ctx: &ToolContext, requested: &Capability) -> Result<(), CoreError> {
-    match &ctx.capabilities {
-        None => Ok(()),
-        Some(caps) if caps.iter().any(|held| held.covers(requested)) => Ok(()),
-        Some(_) => Err(CoreError::unauthorized(format!(
+    if ctx.holds(requested) {
+        Ok(())
+    } else {
+        Err(CoreError::unauthorized(format!(
             "missing capability db:{}@{}",
             match requested.action {
                 Action::Read => "read",
@@ -456,7 +456,7 @@ fn enforce(ctx: &ToolContext, requested: &Capability) -> Result<(), CoreError> {
                 _ => "access",
             },
             requested.resource.selector.as_deref().unwrap_or("*"),
-        ))),
+        )))
     }
 }
 
@@ -485,6 +485,11 @@ struct ListExternalDatabaseConnectionsTool {
 impl Tool for ListExternalDatabaseConnectionsTool {
     fn name(&self) -> &str {
         "list_external_database_connections"
+    }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -657,6 +662,11 @@ impl Tool for ListExternalDatabaseSchemasTool {
     fn name(&self) -> &str {
         "list_external_database_schemas"
     }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "List user-created PostgreSQL schemas on an external database. `prefix` is an optional literal starts-with filter; use a distinct prefix per App or data model so several managed schemas can coexist on one connection."
@@ -696,6 +706,11 @@ impl Tool for GetExternalDatabaseSchemaTool {
     fn name(&self) -> &str {
         "get_external_database_schema"
     }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Inspect one exact PostgreSQL schema namespace on an external database. `prefix` is the schema name; the result includes columns, SQL types, defaults, nullability, and index definitions."
@@ -734,6 +749,11 @@ struct CreateExternalDatabaseSchemaTool {
 impl Tool for CreateExternalDatabaseSchemaTool {
     fn name(&self) -> &str {
         "create_external_database_schema"
+    }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -788,6 +808,11 @@ impl Tool for PlanExternalDatabaseSchemaTool {
     fn name(&self) -> &str {
         "plan_external_database_schema"
     }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Preview the additive-safe DDL needed to edit an existing external PostgreSQL schema prefix. Nothing is changed. Existing tables/columns omitted from `tables` are retained; destructive/type changes require execute_external_database_schema_migration. Requires schema-write authority because it plans structural changes."
@@ -834,6 +859,11 @@ struct EditExternalDatabaseSchemaTool {
 impl Tool for EditExternalDatabaseSchemaTool {
     fn name(&self) -> &str {
         "edit_external_database_schema"
+    }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -887,6 +917,11 @@ impl Tool for ExecuteExternalDatabaseSchemaMigrationTool {
     fn name(&self) -> &str {
         "execute_external_database_schema_migration"
     }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Execute an ordered DDL migration atomically for one existing external PostgreSQL schema prefix. Use only for changes the additive editor cannot make (ALTER TYPE/nullability, rename, or drop). Unqualified names resolve inside `prefix`; `{{prefix}}` is replaced with a safely quoted schema identifier. Requires db:write@<connection>/schema."
@@ -939,6 +974,11 @@ impl Tool for ExecuteExternalDatabaseSchemaMigrationTool {
 impl Tool for SqlQueryTool {
     fn name(&self) -> &str {
         "sql_query"
+    }
+    /// Open at dispatch: the per-connection `db:<action>@<conn>` check runs
+    /// inside `invoke`, once the connection is known.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -1203,9 +1243,9 @@ mod tests {
     #[test]
     fn enforce_denies_without_capability_and_allows_with() {
         let read_db = Capability::new(Action::Read, Resource::new("db", "news"));
-        // No capabilities in context → trusted, allowed.
-        let trusted = ToolContext::default();
-        assert!(enforce(&trusted, &read_db).is_ok());
+        // No capabilities in context → no authority, denied.
+        let no_authority = ToolContext::default();
+        assert!(enforce(&no_authority, &read_db).is_err());
         // Holding db:read@news covers the request; holding only db:read@other does not.
         let mut ctx = ToolContext {
             capabilities: Some(vec![Capability::new(

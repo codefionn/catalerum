@@ -35,6 +35,10 @@ impl catalerum_core::tool::Tool for EchoTool {
     fn name(&self) -> &str {
         "echo"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Value {
         json!({ "type": "object" })
     }
@@ -213,7 +217,7 @@ async fn create_chat_thread_publishes_automation_output_and_checks_authority() {
 
     let messages = store
         .messages()
-        .list_by_conversation(conversation.id)
+        .list_by_conversation(ws.id, conversation.id)
         .await
         .unwrap();
     assert_eq!(messages.len(), 1);

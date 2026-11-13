@@ -243,7 +243,10 @@ impl IamStore for PgIamStore {
         // Resolve the session id from its hash, then delete by id.
         match self.sessions().get_by_token_hash(&token_hash).await {
             Ok(row) => {
-                self.sessions().delete(row.id).await.map_err(map_store)?;
+                self.sessions()
+                    .delete(row.workspace_id(), row.id)
+                    .await
+                    .map_err(map_store)?;
                 Ok(true)
             }
             // `get_by_token_hash` also filters out expired rows; either way

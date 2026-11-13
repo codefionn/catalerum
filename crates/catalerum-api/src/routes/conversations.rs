@@ -338,15 +338,15 @@ async fn list_messages(
 ) -> ApiResult<Json<Vec<Message>>> {
     auth.require(Action::Read, "conversation")?;
     let ws = auth.principal().workspace_id;
-    // Verify the conversation belongs to the caller's workspace before exposing
-    // its messages (messages are keyed by conversation, not workspace).
+    // Verify the conversation belongs to the caller's workspace so an unknown or
+    // foreign id is a 404 rather than an empty list.
     state
         .store()
         .conversations()
         .get(ws, id)
         .await
         .map_err(|_| ApiError::NotFound)?;
-    let messages = state.store().messages().list_by_conversation(id).await?;
+    let messages = state.store().messages().list_by_conversation(ws, id).await?;
     Ok(Json(messages))
 }
 

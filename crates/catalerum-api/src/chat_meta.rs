@@ -83,6 +83,7 @@ async fn generate_meta(
         .store()
         .messages()
         .list_recent(
+            workspace_id,
             conversation_id,
             i64::try_from(META_WINDOW_MESSAGES).unwrap_or(20),
         )

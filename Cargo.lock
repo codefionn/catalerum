@@ -1758,6 +1758,7 @@ version = "0.1.0"
 dependencies = [
  "catalerum-core",
  "chrono",
+ "futures",
  "ring",
  "serde",
  "serde_json",

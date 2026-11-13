@@ -151,6 +151,10 @@ impl Tool for RunJavascriptTool {
     fn name(&self) -> &str {
         RUN_JAVASCRIPT_NAME
     }
+    /// Open: sandboxed JS; every `catalerum.callTool` re-dispatches through the gate.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Evaluate JavaScript in a secure sandbox and return its result. `code` is a \
          function BODY: `return` a value to produce the result (e.g. \

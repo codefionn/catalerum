@@ -1,8 +1,10 @@
 /* --- Flow editor (SOUL §11 Phase C — visual node-graph canvas) --- */
 .flow {
   display: flex; flex-direction: column; flex: 1; min-height: 0;
-  --flow-trigger: #4fd1a1; --flow-action: #6ea8fe; --flow-code: #b692f6; --flow-condition: #f0c46c;
-  --flow-agent: #22d3ee; --flow-classify: #f472b6; --flow-loop: #fb923c;
+  /* Node-kind colours alias the themed categorical ramp (01-theme-tokens.css). */
+  --flow-trigger: var(--chart-2); --flow-action: var(--chart-1); --flow-code: var(--chart-4);
+  --flow-condition: var(--chart-6); --flow-agent: var(--chart-7); --flow-classify: var(--chart-5);
+  --flow-loop: var(--chart-3);
 }
 .flow-palette {
   display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
@@ -33,8 +35,8 @@
 .flow-pal-classifier { --dot: var(--flow-classify); }
 .flow-pal-loop { --dot: var(--flow-loop); }
 .flow-invalid {
-  margin-left: auto; color: #ffb4a2; font-size: .76rem; font-weight: 600;
-  background: rgba(90,34,48,.45); border: 1px solid #5a2230; border-radius: 999px; padding: .18rem .6rem;
+  margin-left: auto; color: var(--err-fg); font-size: .76rem; font-weight: 600;
+  background: color-mix(in srgb, var(--err) 45%, transparent); border: 1px solid var(--err); border-radius: 999px; padding: .18rem .6rem;
 }
 /* Node-type semantic search (SOUL §11): describe a need, get ranked node types. */
 .flow-node-search {
@@ -51,8 +53,8 @@
 .flow-node-search-input:focus { outline: none; border-color: var(--accent); }
 .flow-node-search-status { color: var(--muted); font-size: .76rem; }
 .flow-node-search-err {
-  margin-top: .4rem; color: #ffb4a2; font-size: .76rem;
-  background: rgba(90,34,48,.4); border: 1px solid #5a2230; border-radius: 6px; padding: .3rem .55rem;
+  margin-top: .4rem; color: var(--err-fg); font-size: .76rem;
+  background: color-mix(in srgb, var(--err) 40%, transparent); border: 1px solid var(--err); border-radius: 6px; padding: .3rem .55rem;
 }
 .flow-node-results {
   margin-top: .5rem; display: flex; flex-direction: column; gap: .3rem;
@@ -67,7 +69,7 @@
 .flow-node-result:hover { border-color: var(--accent); background: var(--panel-2); transform: translateY(-1px); }
 .flow-node-result-badge {
   flex: none; margin-top: .05rem; font-size: .66rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .4px; color: #0b0f14; border-radius: 5px; padding: .12rem .4rem;
+  letter-spacing: .4px; color: var(--bg); border-radius: 5px; padding: .12rem .4rem;
 }
 .flow-rb-trigger { background: var(--flow-trigger); }
 .flow-rb-action { background: var(--flow-action); }
@@ -175,8 +177,8 @@
 .flow-port-in:hover { fill: var(--fg); stroke: var(--fg); }
 .flow-port-true { stroke: var(--flow-trigger); }
 .flow-port-true:hover { fill: var(--flow-trigger); }
-.flow-port-false { stroke: #ff8b8b; }
-.flow-port-false:hover { fill: #ff8b8b; }
+.flow-port-false { stroke: var(--err-fg); }
+.flow-port-false:hover { fill: var(--err-fg); }
 .flow-port-label {
   fill: var(--muted); font-size: 9.5px; font-weight: 700; text-anchor: start; pointer-events: none;
   text-transform: uppercase; letter-spacing: .3px; font-family: ui-sans-serif, system-ui, sans-serif;
@@ -185,7 +187,7 @@
   paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round;
 }
 .flow-plabel-true { fill: var(--flow-trigger); }
-.flow-plabel-false { fill: #ff8b8b; }
+.flow-plabel-false { fill: var(--err-fg); }
 /* The collect trigger's commit gate (SOUL §11/§28): dashed + amber so "advance
    the cursor when this write succeeds" never reads as a second data edge. */
 .flow-edge-commit { stroke: var(--warn-fg); stroke-dasharray: 7 5; }
@@ -224,8 +226,8 @@
   background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
   border-radius: 7px; padding: .3rem .6rem; font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
 }
-.flow-cfg-del { color: var(--err-fg); border-color: #5a2730; }
-.flow-cfg-del:hover { background: #5a2730; color: var(--on-accent); }
+.flow-cfg-del { color: var(--err-fg); border-color: var(--err-border); }
+.flow-cfg-del:hover { background: var(--err-border); color: var(--on-accent); }
 /* The bottom-sheet dismiss button only exists on mobile (see the media block); on
    desktop the config rail is always docked, so it has nothing to close. */
 .flow-cfg-close { display: none; }

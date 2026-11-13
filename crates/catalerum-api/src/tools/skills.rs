@@ -17,6 +17,10 @@ impl Tool for UseSkillTool {
     fn name(&self) -> &str {
         "use_skill"
     }
+    /// Open at dispatch: the per-skill `skill:use@<name>` check runs inside `invoke`.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
     fn description(&self) -> &str {
         "Invoke a saved skill by name. Returns its instructions (a runbook to \
          follow) and the tools it is meant to use; those tools are automatically \
@@ -38,17 +42,14 @@ impl Tool for UseSkillTool {
             .get_by_name(ws, &name)
             .await?
             .ok_or_else(|| Error::invalid(format!("unknown skill `{name}`")))?;
-        // Per-skill capability gate (`skill:use@<name>`, §19/§23) — enforced only
-        // when the caller's capabilities are known. A whole-domain `skill:use`
-        // covers any skill; a narrow `skill:use@<name>` covers only that one.
-        if let Some(caps) = &ctx.capabilities {
-            let required = Capability::new(Action::Use, Resource::new("skill", &skill.name));
-            if !caps.iter().any(|c| c.covers(&required)) {
-                return Err(Error::unauthorized(format!(
-                    "the caller's grant does not permit skill:use@{}",
-                    skill.name
-                )));
-            }
+        // Per-skill capability gate (`skill:use@<name>`, §19/§23), deny-by-default.
+        // A whole-domain `skill:use` covers any skill; a narrow
+        // `skill:use@<name>` covers only that one.
+        if !ctx.holds(&Capability::new(Action::Use, Resource::new("skill", &skill.name))) {
+            return Err(Error::unauthorized(format!(
+                "the caller's grant does not permit skill:use@{}",
+                skill.name
+            )));
         }
         Ok(json!({
             "name": skill.name,

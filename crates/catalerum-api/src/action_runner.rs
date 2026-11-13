@@ -142,16 +142,17 @@ pub struct ToolActionRunner {
 }
 
 impl ToolActionRunner {
-    /// A runner over `registry` with no identity and **no capability enforcement**
-    /// (`capabilities = None` — a trusted/internal caller). Attenuate with
-    /// [`with_capabilities`](Self::with_capabilities) to run deny-by-default.
+    /// A runner over `registry` with no identity and **full authority** (`*:*`) —
+    /// a trusted internal caller, stated explicitly since dispatch is always
+    /// deny-by-default (SOUL §19). Attenuate with
+    /// [`with_capabilities`](Self::with_capabilities).
     #[must_use]
     pub fn new(registry: ToolRegistry) -> Self {
         Self {
             registry,
             user_id: None,
             agent_id: None,
-            capabilities: None,
+            capabilities: Some(vec![Capability::new(CapAction::Any, Resource::any())]),
             store: None,
             llm: None,
             decision_model: None,
@@ -238,13 +239,20 @@ impl ToolActionRunner {
         self
     }
 
+    /// The context for an explicitly pinned identity (or a store-less runner).
+    /// Without explicit capabilities it gets the same bounded default authority
+    /// as an owner-resolved run — never "no capabilities", which dispatch refuses.
     fn context(&self, workspace_id: WorkspaceId) -> ToolContext {
         ToolContext {
             workspace_id: Some(workspace_id),
             user_id: self.user_id,
             agent_id: self.agent_id,
             grant_id: None,
-            capabilities: self.capabilities.clone(),
+            capabilities: Some(
+                self.capabilities
+                    .clone()
+                    .unwrap_or_else(default_automation_capabilities),
+            ),
             dry_run: false,
             gate: None,
             conversation_id: None,
@@ -260,8 +268,8 @@ impl ToolActionRunner {
     /// the acting identity is the **workspace owner** and the authority is bounded
     /// to base **Member** capabilities (SOUL §19; see
     /// [`workspace_owner_authority`](Self::workspace_owner_authority)). With
-    /// neither, the context carries no principal (the trusted internal-caller path,
-    /// matching [`new`](Self::new)).
+    /// neither, the context carries no principal and the runner's own capability
+    /// set ([`new`](Self::new) states full authority explicitly).
     /// Apply the automation's §19 `grant` to a resolved context: the grant **is**
     /// the authority, so it *replaces* the context's capabilities with its bundle
     /// (attenuation — an admin conferred exactly these) and records which grant
@@ -1037,12 +1045,10 @@ impl ToolActionRunner {
 
 
 /// Enforce a capability for a special-cased action that bypasses the registry's own
-/// gate. `None` capabilities = a trusted/internal caller (no enforcement), matching
-/// [`ToolRegistry::dispatch`].
+/// gate. Deny-by-default like [`ToolRegistry::dispatch`]: a context without
+/// capabilities holds nothing.
 fn cap_allows(ctx: &ToolContext, required: &Capability) -> bool {
-    ctx.capabilities
-        .as_ref()
-        .is_none_or(|caps| caps.iter().any(|h| h.covers(required)))
+    ctx.holds(required)
 }
 
 #[async_trait]

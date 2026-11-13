@@ -210,19 +210,15 @@ fn embed_text(name: &str, description: &str) -> String {
 }
 
 /// Whether `ctx` may dispatch `name` — the exact gate
-/// [`ToolRegistry::dispatch`](catalerum_core::tool::ToolRegistry::dispatch) applies:
-/// when the caller's capabilities are known, the tool's `required_capability` must
-/// be covered; an unknown context (trusted) or an ungated tool always passes.
-/// Shared with `list_tools` ([`crate::tools`]) so both discovery surfaces filter
-/// identically.
+/// [`ToolRegistry::dispatch`](catalerum_core::tool::ToolRegistry::dispatch) applies
+/// ([`catalerum_core::tool::authorize`]): a context without capabilities sees
+/// nothing, an open tool passes for any authority, a gated tool needs a covering
+/// capability. Shared with `list_tools` ([`crate::tools`]) so both discovery
+/// surfaces filter identically.
 pub(crate) fn tool_allowed(registry: &ToolRegistry, ctx: &ToolContext, name: &str) -> bool {
-    let Some(tool) = registry.get(name) else {
-        return false;
-    };
-    match (&ctx.capabilities, tool.required_capability()) {
-        (Some(caps), Some(required)) => caps.iter().any(|held| held.covers(&required)),
-        _ => true,
-    }
+    registry
+        .get(name)
+        .is_some_and(|tool| catalerum_core::tool::authorize(tool.as_ref(), ctx).is_ok())
 }
 
 /// Cosine similarity of two equal-length vectors; `0.0` for a length mismatch or a
@@ -353,9 +349,8 @@ mod tests {
         ));
         let idx = index();
 
-        // Owner-ish context (no capability restriction): a browser query ranks the
-        // browser tool first.
-        let ctx = ToolContext::default();
+        // Full-authority context: a browser query ranks the browser tool first.
+        let ctx = crate::test_support::full_authority();
         let hits = idx.search(&reg, &ctx, "open a browser", 10).await.unwrap();
         assert_eq!(hits[0].name, "browse");
         assert!(hits[0].score > 0.9);
@@ -382,6 +377,14 @@ mod tests {
             "gated tool filtered out"
         );
         assert!(names.contains(&"browse".to_string()) && names.contains(&"take_note".to_string()));
+
+        // A context without capabilities holds no authority: it sees nothing,
+        // not even open tools — exactly what dispatch would let it call.
+        let none = idx
+            .search(&reg, &ToolContext::default(), "open a browser", 10)
+            .await
+            .unwrap();
+        assert!(none.is_empty(), "no authority, no tools: {none:?}");
     }
 
     #[tokio::test]
@@ -418,7 +421,7 @@ mod tests {
         reg.register_dynamic(stub("browse", "drive a web browser", None));
         // No explicit reconcile — search must pick the new overlay tool up itself.
         let hits = idx
-            .search(&reg, &ToolContext::default(), "browser", 5)
+            .search(&reg, &crate::test_support::full_authority(), "browser", 5)
             .await
             .unwrap();
         assert_eq!(hits.len(), 1);

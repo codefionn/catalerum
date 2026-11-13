@@ -111,13 +111,15 @@ pub(crate) async fn resolve_profile_grant(
         StoreError::NotFound => Error::invalid("grant not found in this workspace"),
         other => other.into(),
     })?;
-    if let Some(caps) = &ctx.capabilities {
-        for cap in &grant.capabilities {
-            if attenuate(caps, cap).is_err() {
-                return Err(Error::unauthorized(
-                    "profile grant exceeds your own authority",
-                ));
-            }
+    let caps = ctx
+        .capabilities
+        .as_deref()
+        .ok_or_else(|| Error::unauthorized("no authority to bind a profile grant"))?;
+    for cap in &grant.capabilities {
+        if attenuate(caps, cap).is_err() {
+            return Err(Error::unauthorized(
+                "profile grant exceeds your own authority",
+            ));
         }
     }
     Ok(Some(id))

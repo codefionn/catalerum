@@ -496,6 +496,10 @@ impl Tool for TerminalUpstreamTool {
     fn name(&self) -> &str {
         TERMINAL_UPSTREAM_NAME
     }
+    /// Open: child-run plumbing; nested calls dispatch under the parent context.
+    fn required_capability(&self) -> Option<Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         &self.description
@@ -584,6 +588,10 @@ pub(super) struct FinishTerminalWorkTool {
 impl Tool for FinishTerminalWorkTool {
     fn name(&self) -> &str {
         TERMINAL_FINISH_NAME
+    }
+    /// Open: records the child run's result, touches no tenant data.
+    fn required_capability(&self) -> Option<Capability> {
+        None
     }
 
     fn description(&self) -> &str {

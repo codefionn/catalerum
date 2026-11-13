@@ -185,7 +185,7 @@ pub(super) fn transient_rest_error(e: &rest::RestError) -> bool {
     match e {
         rest::RestError::Transport(_) => true,
         rest::RestError::Status { status, .. } => *status == 429 || *status >= 500,
-        rest::RestError::Decode(_) => false,
+        rest::RestError::Encode(_) | rest::RestError::Decode(_) => false,
     }
 }
 

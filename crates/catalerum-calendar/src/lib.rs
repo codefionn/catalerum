@@ -220,6 +220,87 @@ pub fn provider_from_connection_with(
     }
 }
 
+/// A calendar backend that can open server **push channels** (SOUL §8): the
+/// backend POSTs to a webhook `address` when the calendar changes, so a change
+/// triggers a collect promptly instead of waiting for the poll cadence. Push is
+/// a latency optimization only; the poll stays the correctness path.
+///
+/// Built by [`watcher_from_connection_with`]; today only Google Calendar
+/// (`events.watch` / `channels.stop`) implements it.
+#[async_trait::async_trait]
+pub trait CalendarWatcher: Send + Sync {
+    /// Open a channel POSTing to `address`. `channel_id` is a caller-chosen
+    /// unique id; `channel_token` is the opaque secret the backend echoes on
+    /// every notification; `ttl_secs` requests a lifetime the backend may clamp.
+    /// The returned [`WatchChannel::expiry`](google::WatchChannel::expiry) is
+    /// authoritative.
+    async fn start_watch(
+        &self,
+        address: &str,
+        channel_id: &str,
+        channel_token: &str,
+        ttl_secs: Option<i64>,
+    ) -> Result<google::WatchChannel>;
+
+    /// Stop a previously-started channel. Idempotent: an already-expired or
+    /// unknown channel is success.
+    async fn stop_watch(&self, channel_id: &str, resource_id: &str) -> Result<()>;
+}
+
+#[async_trait::async_trait]
+impl CalendarWatcher for GoogleCalendarProvider {
+    async fn start_watch(
+        &self,
+        address: &str,
+        channel_id: &str,
+        channel_token: &str,
+        ttl_secs: Option<i64>,
+    ) -> Result<google::WatchChannel> {
+        GoogleCalendarProvider::start_watch(self, address, channel_id, channel_token, ttl_secs)
+            .await
+    }
+
+    async fn stop_watch(&self, channel_id: &str, resource_id: &str) -> Result<()> {
+        GoogleCalendarProvider::stop_watch(self, channel_id, resource_id).await
+    }
+}
+
+/// Build a push-channel [`CalendarWatcher`] for a calendar [`Connection`], the
+/// watch counterpart of [`provider_from_connection_with`]. Only a **Google**
+/// connection supports push; it needs the OAuth token seam (`None` errors
+/// clearly). Every other backend is rejected with an [`Error`].
+pub fn watcher_from_connection_with(
+    connection: &Connection,
+    config: &serde_json::Value,
+    google_tokens: Option<Arc<dyn google::GoogleTokenStore>>,
+) -> Result<Arc<dyn CalendarWatcher>> {
+    if connection.kind != ConnectionKind::Calendar {
+        return Err(Error::invalid(format!(
+            "connection {} is not a calendar connection (kind = {:?})",
+            connection.id, connection.kind
+        )));
+    }
+    match CalendarSubKind::from_config(config)? {
+        CalendarSubKind::Google => {
+            let tokens = google_tokens.ok_or_else(|| {
+                Error::invalid(
+                    "Google Calendar connection has no OAuth credentials available — \
+                     connect it via /auth/google/connect and set [secrets].master_key",
+                )
+            })?;
+            Ok(Arc::new(GoogleCalendarProvider::from_config(
+                connection.workspace_id,
+                connection.id,
+                config,
+                tokens,
+            )?))
+        }
+        other => Err(Error::invalid(format!(
+            "calendar provider {other:?} does not support push channels"
+        ))),
+    }
+}
+
 /// A content-hash [`Cursor`] (`sha256:<hex>`) over raw calendar bytes, used by the
 /// local-`.ics` and CalDAV backends to detect "unchanged since last sync" without a
 /// server-provided token. Shared so both backends hash identically.

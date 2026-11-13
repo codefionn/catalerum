@@ -41,7 +41,7 @@ async fn tool_message_round_trips_error_flag_and_duration() {
     // A plain text row keeps the defaults.
     store
         .messages()
-        .insert(&NewMessage::text(conv.id, MessageRole::User, "run a tool"))
+        .insert(&NewMessage::text(ws.id, conv.id, MessageRole::User, "run a tool"))
         .await
         .expect("insert user");
 
@@ -49,6 +49,7 @@ async fn tool_message_round_trips_error_flag_and_duration() {
     store
         .messages()
         .insert(&NewMessage {
+            workspace_id: ws.id,
             conversation_id: conv.id,
             id: None,
             role: MessageRole::Tool,
@@ -66,7 +67,7 @@ async fn tool_message_round_trips_error_flag_and_duration() {
 
     let msgs = store
         .messages()
-        .list_by_conversation(conv.id)
+        .list_by_conversation(ws.id, conv.id)
         .await
         .expect("list");
     assert_eq!(msgs.len(), 2);
@@ -86,7 +87,7 @@ async fn tool_message_round_trips_error_flag_and_duration() {
     assert_eq!(tool.tool_duration_ms, Some(412));
 
     // `get` by id sees the same metadata.
-    let fetched = store.messages().get(tool.id).await.expect("get tool");
+    let fetched = store.messages().get(ws.id, tool.id).await.expect("get tool");
     assert!(fetched.tool_is_error);
     assert_eq!(fetched.tool_duration_ms, Some(412));
 }

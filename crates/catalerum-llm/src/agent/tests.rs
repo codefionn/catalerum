@@ -4,6 +4,18 @@ use async_trait::async_trait;
 use catalerum_core::tool::{Tool, MODEL_MEDIA_RESULT_FIELD};
 use std::sync::Arc;
 
+/// A context holding full authority (`*:*`): these tests exercise the agent loop,
+/// not the capability check, and dispatch refuses a context without capabilities.
+fn full_authority() -> ToolContext {
+    ToolContext {
+        capabilities: Some(vec![catalerum_core::capability::Capability::new(
+            catalerum_core::capability::Action::Any,
+            catalerum_core::capability::Resource::any(),
+        )]),
+        ..ToolContext::default()
+    }
+}
+
 #[test]
 fn config_default() {
     let config = AgentConfig::default();
@@ -83,6 +95,10 @@ impl Tool for EchoTool {
     fn name(&self) -> &str {
         "echo"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
     }
@@ -95,7 +111,7 @@ impl Tool for EchoTool {
 async fn dispatch_one_success_and_error() {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
 
     let ok = dispatch_one(
         &reg,
@@ -146,6 +162,10 @@ impl Tool for NativeMediaTool {
     fn name(&self) -> &str {
         "native_media"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
     }
@@ -179,7 +199,7 @@ async fn native_media_is_removed_from_textual_tool_result() {
         arguments: r#"{"__catalerum_model_input_modalities":["spoofed"]}"#.into(),
     };
     let (result, is_error, media) =
-        run_tool(&registry, &ToolContext::default(), &call, &["image".into()]).await;
+        run_tool(&registry, &full_authority(), &call, &["image".into()]).await;
     assert!(!is_error);
     assert_eq!(result, r#"{"size":4}"#);
     assert_eq!(
@@ -296,7 +316,7 @@ async fn native_image_is_attached_after_the_tool_result_on_the_next_turn() {
         &streamer,
         ChatRequest::new("m", vec![ChatMessage::user("inspect image.png")]),
         &registry,
-        &ToolContext::default(),
+        &full_authority(),
         &config,
         None,
         &mut observer,
@@ -416,7 +436,7 @@ async fn streaming_loop_dispatches_tools_and_relays_events() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let request = ChatRequest::new("m", vec![ChatMessage::user("hi")]);
 
@@ -532,7 +552,7 @@ async fn streaming_loop_recovers_once_from_an_empty_final_response() {
         &streamer,
         ChatRequest::new("m", vec![ChatMessage::user("build it")]),
         &reg,
-        &ToolContext::default(),
+        &full_authority(),
         &AgentConfig::default(),
         None,
         &mut obs,
@@ -595,7 +615,7 @@ async fn streaming_loop_carries_reasoning_into_assistant_turn() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
 
     let outcome = run_loop(
@@ -646,7 +666,7 @@ async fn streaming_loop_stops_on_stream_error() {
         seen_tool_names: Mutex::new(Vec::new()),
     };
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let request = ChatRequest::new("m", vec![ChatMessage::user("hi")]);
 
@@ -699,7 +719,7 @@ async fn iteration_cap_surfaces_last_assistant_text_not_empty() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         max_iterations: 1,
@@ -762,7 +782,7 @@ async fn identical_tool_call_streak_stops_before_the_iteration_cap() {
         &streamer,
         ChatRequest::new("m", vec![ChatMessage::user("hi")]),
         &reg,
-        &ToolContext::default(),
+        &full_authority(),
         &AgentConfig::default(),
         None,
         &mut obs,
@@ -797,7 +817,7 @@ async fn consecutive_tool_errors_stop_even_when_calls_keep_changing() {
         &streamer,
         ChatRequest::new("m", vec![ChatMessage::user("hi")]),
         &ToolRegistry::new(),
-        &ToolContext::default(),
+        &full_authority(),
         &cfg,
         None,
         &mut obs,
@@ -836,7 +856,7 @@ async fn a_success_resets_the_consecutive_tool_error_streak() {
         &streamer,
         ChatRequest::new("m", vec![ChatMessage::user("hi")]),
         &reg,
-        &ToolContext::default(),
+        &full_authority(),
         &cfg,
         None,
         &mut obs,
@@ -885,7 +905,7 @@ async fn cost_limit_halts_before_another_paid_turn() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         max_iterations: 5,
@@ -966,7 +986,7 @@ async fn cost_limit_does_not_trip_when_under_budget() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         max_iterations: 5,
@@ -1017,7 +1037,7 @@ async fn queued_user_input_extends_the_turn_past_a_clean_finish() {
         seen_tool_names: Mutex::new(Vec::new()),
     };
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver {
         queued_input: VecDeque::from([vec![ChatMessage::user("follow-up")]]),
         ..Default::default()
@@ -1081,7 +1101,7 @@ async fn queued_user_input_lands_after_the_round_s_tool_results() {
     };
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver {
         queued_input: VecDeque::from([vec![ChatMessage::user("note")]]),
         ..Default::default()
@@ -1157,7 +1177,7 @@ async fn stop_mid_stream_keeps_partial_text_and_drops_half_assembled_calls() {
         cancel.cancel();
     });
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
 
     let outcome = run_loop(
@@ -1201,6 +1221,10 @@ impl Tool for StuckTool {
     fn name(&self) -> &str {
         "stuck"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
     }
@@ -1241,7 +1265,7 @@ async fn stop_mid_dispatch_synthesizes_cancelled_results_for_every_call() {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(StuckTool));
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let cancel = CancellationToken::new();
     let cfg = AgentConfig {
         cancel: cancel.clone(),
@@ -1321,7 +1345,7 @@ async fn pre_cancelled_run_stops_before_any_model_turn() {
         seen_tool_names: Mutex::new(Vec::new()),
     };
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
 
     let outcome = run_loop(
@@ -1354,6 +1378,10 @@ impl Tool for FinderTool {
     fn name(&self) -> &str {
         "finder"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
     }
@@ -1373,6 +1401,10 @@ impl Tool for ExplicitLoaderFinder {
     fn name(&self) -> &str {
         "explicit_loader_finder"
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
     }
@@ -1387,6 +1419,10 @@ struct ExplicitLoaderTool;
 impl Tool for ExplicitLoaderTool {
     fn name(&self) -> &str {
         "explicit_loader"
+    }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
     fn parameters_schema(&self) -> Json {
         serde_json::json!({ "type": "object" })
@@ -1425,7 +1461,7 @@ async fn deferred_advertising_seeds_pinned_set_and_widens_from_discovery() {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(FinderTool));
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         discovery_tools: vec!["finder".to_string()],
@@ -1482,7 +1518,7 @@ async fn deferred_advertising_accepts_explicit_companions_from_any_loaded_tool()
     reg.register(Arc::new(ExplicitLoaderFinder));
     reg.register(Arc::new(ExplicitLoaderTool));
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         discovery_tools: vec!["explicit_loader_finder".to_string()],
@@ -1534,7 +1570,7 @@ async fn deferred_advertising_rewidens_from_replayed_history() {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(FinderTool));
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         discovery_tools: vec!["finder".to_string()],
@@ -1591,7 +1627,7 @@ async fn deferred_advertising_respects_the_allow_list_when_widening() {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(FinderTool));
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         discovery_tools: vec!["finder".to_string()],
@@ -1626,7 +1662,7 @@ async fn deferred_advertising_falls_back_to_everything_on_an_empty_seed() {
     let streamer = ScriptedStreamer::scripted(vec![text_turn("done")]);
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(EchoTool));
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         discovery_tools: vec!["nope".to_string()],
@@ -1686,7 +1722,7 @@ async fn oversized_history_is_compacted_before_the_next_turn() {
     let streamer =
         ScriptedStreamer::scripted(vec![text_turn("THE-SUMMARY"), text_turn("done")]);
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         compaction: tiny_compaction(),
@@ -1748,7 +1784,7 @@ async fn failed_summarize_fails_open_and_the_turn_proceeds() {
     ];
     let streamer = ScriptedStreamer::scripted(vec![summarize_error, text_turn("done")]);
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         compaction: tiny_compaction(),
@@ -1784,7 +1820,7 @@ async fn failed_summarize_fails_open_and_the_turn_proceeds() {
 async fn compaction_disabled_never_summarizes() {
     let streamer = ScriptedStreamer::scripted(vec![text_turn("done")]);
     let reg = ToolRegistry::new();
-    let ctx = ToolContext::default();
+    let ctx = full_authority();
     let mut obs = RecordingObserver::default();
     let cfg = AgentConfig {
         compaction: CompactionConfig {

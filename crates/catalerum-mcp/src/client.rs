@@ -425,6 +425,10 @@ mod tests {
         fn name(&self) -> &str {
             "echo"
         }
+        /// Test tool: open.
+        fn required_capability(&self) -> Option<Capability> {
+            None
+        }
         fn description(&self) -> &str {
             "returns its args"
         }
@@ -442,7 +446,14 @@ mod tests {
     fn loopback() -> impl McpTransport {
         let mut registry = ToolRegistry::new();
         registry.register(Arc::new(EchoTool));
-        let server = McpServer::new(registry, ToolContext::default());
+        let ctx = ToolContext {
+            capabilities: Some(vec![Capability::new(
+                catalerum_core::capability::Action::Any,
+                catalerum_core::capability::Resource::any(),
+            )]),
+            ..ToolContext::default()
+        };
+        let server = McpServer::new(registry, ctx);
 
         let (client_side, server_side) = duplex(64 * 1024);
         let (client_r, client_w) = split(client_side);

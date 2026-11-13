@@ -57,7 +57,7 @@ async fn user_message_round_trips_attachment_references() {
         .messages()
         .insert(&NewMessage {
             attachments: &attachments,
-            ..NewMessage::text(conv.id, MessageRole::User, "here are the files")
+            ..NewMessage::text(ws.id, conv.id, MessageRole::User, "here are the files")
         })
         .await
         .expect("insert user with attachments");
@@ -65,13 +65,13 @@ async fn user_message_round_trips_attachment_references() {
     // A plain assistant turn carries none.
     store
         .messages()
-        .insert(&NewMessage::text(conv.id, MessageRole::Assistant, "thanks"))
+        .insert(&NewMessage::text(ws.id, conv.id, MessageRole::Assistant, "thanks"))
         .await
         .expect("insert assistant");
 
     let msgs = store
         .messages()
-        .list_by_conversation(conv.id)
+        .list_by_conversation(ws.id, conv.id)
         .await
         .expect("list");
 

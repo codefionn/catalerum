@@ -92,7 +92,7 @@ pub async fn extract_memories<L: LlmClient + ?Sized>(
     // huge, conversation), from which `recent_transcript` keeps the last few turns.
     let history = store
         .messages()
-        .list_recent(conversation_id, TRANSCRIPT_SCAN)
+        .list_recent(workspace_id, conversation_id, TRANSCRIPT_SCAN)
         .await?;
     let transcript = recent_transcript(&history);
     if transcript.is_empty() {
@@ -364,6 +364,7 @@ mod tests {
     fn msg(role: MessageRole, content: &str) -> catalerum_core::Message {
         catalerum_core::Message {
             id: catalerum_core::MessageId::new(),
+            workspace_id: catalerum_core::WorkspaceId::new(),
             conversation_id: catalerum_core::ConversationId::new(),
             role,
             content: content.to_string(),

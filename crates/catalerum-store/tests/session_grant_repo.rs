@@ -79,11 +79,35 @@ async fn session_grant_round_trips_and_fails_closed_on_delete() {
     assert_eq!(by_hash.grant_id(), Some(grant.id));
     assert!(store
         .sessions()
-        .list_by_user(user.id)
+        .list_by_user(ws.id, user.id)
         .await
         .expect("list")
         .iter()
         .any(|s| s.grant_id() == Some(grant.id)));
+
+    // (1b) Workspace isolation (SOUL §18): the session is reachable by id only
+    // through its own workspace, and the per-user listing is workspace-scoped.
+    assert_eq!(
+        store
+            .sessions()
+            .get(ws.id, bound.id)
+            .await
+            .expect("get in own ws")
+            .id,
+        bound.id
+    );
+    assert!(store.sessions().get(other.id, bound.id).await.is_err());
+    assert!(store
+        .sessions()
+        .list_by_user(other.id, user.id)
+        .await
+        .expect("list other ws")
+        .is_empty());
+    assert!(matches!(
+        store.sessions().delete(other.id, bound.id).await,
+        Err(catalerum_store::StoreError::NotFound)
+    ));
+    assert!(store.sessions().get(ws.id, bound.id).await.is_ok());
 
     // (2) A grantless session persists a NULL grant_id.
     store

@@ -117,26 +117,38 @@ Cargo workspace under `crates/`, small single-purpose crates.
 
 ```
 crates/
-  catalerum-core/        # domain model, IDs, error types, shared traits
-  catalerum-store/       # Postgres via sqlx: migrations, repositories (source of truth)
-  catalerum-graph/       # Neo4j (neo4rs/bolt): projection writers + Cypher queries
-  catalerum-vector/      # Qdrant: collections, embeddings upsert, filtered ANN search
-  catalerum-bus/         # Valkey: pub/sub token relay, Streams work bus, locks, HA coord
-  catalerum-llm/         # llmleaf / OpenRouter client: streaming, tool-calls, agent loop
-  catalerum-iam/         # workspaces, users, SSO + dev-login, sessions, capabilities, grants
-  catalerum-calendar/    # CalendarProvider trait + local(ics) / CalDAV-webcal / Google
-  catalerum-storage/     # StorageBackend trait + local / S3 / WebDAV
-  catalerum-email/       # EmailProvider trait + local Maildir / IMAP / JMAP (read-only ingest)
-  catalerum-exec/        # Executor trait + local / docker-podman / k8s-operator / bao backends
-  catalerum-skills/      # skill registry (markdown-defined): instructions + tools + optional code
-  catalerum-channels/    # Matrix / Telegram / Discord: deliver + receive
-  catalerum-fetch/       # WebFetcher trait impls + HTML->Markdown (HTTP / browser-CDP / Firecrawl)
-  catalerum-ingest/      # sync orchestration: pull -> normalize -> store -> enqueue
-  catalerum-automation/  # trigger/condition/action engine, durable queue, agent runner
-  catalerum-api/         # Axum HTTP + WebSocket + SSE (the scoped agent tool surface)
-  catalerum-mcp/         # external MCP server: scoped tools/resources/prompts for other agents
-  catalerum-web/         # Leptos workbench
-  catalerum/             # binary: load config, wire services, run API + workers
+  catalerum-core/            # domain model, IDs, error types, shared traits (depends on nothing)
+  catalerum-store/           # Postgres via sqlx: migrations, repositories (source of truth)
+  catalerum-graph/           # Neo4j over its HTTP API: projection writers + Cypher queries
+  catalerum-logic/           # in-process Datalog over the derived graph (no raw Cypher upstream)
+  catalerum-vector/          # Qdrant: collections, embeddings upsert, filtered ANN search
+  catalerum-bus/             # Valkey: pub/sub token relay, Streams work bus, locks, HA coord
+  catalerum-llm/             # llmleaf client: Responses-API chat + agent loop, embeddings, TTS, STT
+  catalerum-iam/             # workspaces, users, SSO + dev-login, sessions, capabilities, grants
+  catalerum-calendar/        # CalendarProvider trait + local(ics) / CalDAV-webcal / Google / Outlook
+  catalerum-storage/         # StorageBackend trait + local / S3 / WebDAV
+  catalerum-email/           # EmailProvider trait + local Maildir / IMAP / JMAP (read-only ingest)
+  catalerum-ocr/             # OcrEngine trait + /v1/ocr client + tesseract CLI, composed by a fallback chain
+  catalerum-exec/            # Executor trait + local / docker-podman / k8s-operator / bao backends
+  catalerum-script/          # CodeRunner: Boa sandboxed JS + exec-backed runtimes
+  catalerum-skills/          # skill registry (markdown-defined): instructions + tools + optional code
+  catalerum-channels/        # Matrix / Telegram / Discord / Slack: deliver + receive
+  catalerum-fetch/           # WebFetcher trait impls + HTML->Markdown (HTTP / browser-CDP / Firecrawl)
+  catalerum-search/          # WebSearcher trait impls behind one capability-gated web_search tool
+  catalerum-ingest/          # sync orchestration: pull -> normalize -> store -> enqueue
+  catalerum-automation/      # trigger/condition/action engine, durable queue, agent runner
+  catalerum-backup/          # disaster-recovery backup + restore (Postgres dump + blobs, §30)
+  catalerum-api/             # Axum HTTP + WebSocket + SSE (the scoped agent tool surface)
+  catalerum-mcp/             # MCP server (scoped tools/resources/prompts) + external MCP client
+  catalerum-markdown/        # streaming SIMD Markdown -> HTML / Leptos (native + wasm)
+  catalerum-markdown-worker/ # Web Worker that renders Markdown off the workbench's main thread
+  catalerum-web/             # Leptos workbench (wasm CSR)
+  catalerum-agent/           # installable computer-agent daemon (files/search/exec over authed WS)
+  catalerum-preview/         # standalone preview render service (images, LibreOffice/poppler docs)
+  catalerum-k8s/             # WorkspaceSandbox CRD types, shared by operator + API
+  catalerum-operator/        # Kubernetes operator reconciling WorkspaceSandbox CRs (§20)
+  catalerum-all-in-one/      # single-container supervisor (catalerum, llmleaf, qdrant, preview, web)
+  catalerum/                 # binary: load config, wire services, run API + workers
 ```
 
 Dependency direction: `core` depends on nothing; everything depends on `core`; `api`/binary
@@ -743,6 +755,12 @@ grant. The model is never trusted to self-limit.
   Executor (host), `*:delete`, `exec` without an image/lang/command allow-list, network egress,
   broad `mcp:expose`. "Destroy production" / "wipe the local computer" is unreachable unless that
   exact capability is handed over on purpose.
+  Dispatch refuses any call whose context carries no capabilities; a caller that really is
+  trusted passes `*:*` explicitly. Every tool states its `required_capability` (the trait has no
+  default). The few that state `None` are *open*, meaning any holder of an authority may call
+  them: static catalogs, the caller's own thread, nested-call hosts that re-dispatch through the
+  gate, and tools that check an argument-dependent capability (`db:read@<conn>`,
+  `skill:use@<name>`) themselves via `ToolContext::holds`.
 - **Audit & revocation.** Every authorized action and every denied attempt is logged; grants can
   be revoked instantly (Postgres truth + Valkey fan-out), killing authority mid-flight.
 
@@ -1131,6 +1149,14 @@ on restore (today: re-ingest); and artifact-level encryption beyond what the
 destination provides (an SSE-enabled S3 bucket) until a backup envelope lands.
 
 ## 31. Implementation Progress
+
+**2026-11-14. Messages, sessions and computer agents are workspace-filtered.** This closes the store half of the 2026-11-13 "found, not fixed" list. Migration 0072 (SQLite mirror 0008) adds `messages.workspace_id`, backfilled from `conversations`, NOT NULL with a cascading FK to `workspaces` on Postgres, plus `messages_workspace_idx (workspace_id, created_at DESC)`. SQLite keeps the column nullable because tightening it needs a table rebuild, and dropping `messages` would fire the `summary_upto` SET NULL. `Message` now carries `workspace_id`. `NewMessage` takes a `workspace_id`, and the INSERT selects the conversation by id and workspace, so a write into another tenant's thread returns NotFound and stores nothing. Every `MessageRepo` read, update and delete (`get`, `set_usage`, `delete`, `list_by_conversation`, `list_recent`, `list_recent_after`, `delete_after`) takes a `WorkspaceId`, and `search_in_workspace` filters on the message's own column. `SessionRepo::get/delete/list_by_user` and `ComputerAgentRepo::touch_seen` take one too (`touch_seen` now returns NotFound on a miss). Token-hash lookups and the expiry sweeps stay global, with a comment saying why. Callers in `routes/ws.rs`, `routes/conversations.rs`, `routes/tokens.rs`, `routes/computer_agents.rs`, `chat_meta.rs`, `chat_compact.rs`, `tools/chat.rs`, `catalerum-iam` and `catalerum-ingest/curate.rs` pass the workspace they already held. `job_queue` `get/complete/fail` still go by id: workers claim jobs before any workspace is known and the column is nullable for system jobs. **Verified:** `just lint` passed. Against local Postgres, `cargo test -p catalerum-store --no-fail-fast` passed 96 of 96, including the new `messages_workspace_repo` and the cross-workspace cases added to `session_grant_repo` and `computer_agents_repo`. A first run without `--no-fail-fast` hit the known `reclaim_closes_only_provably_dead_pods_rows` race. `catalerum-api --lib` passed 572, `catalerum-ingest --test curate` 2, `catalerum-iam` 52, and the SQLite smoke test (now inserting and reading a message) passed. The migration's backfill was not run against a database holding pre-existing messages.
+
+**2026-11-14. Capability checks are always on.** `ToolRegistry::dispatch` used to skip the capability check when `ctx.capabilities` was `None`, and 29 tools inherited a `required_capability` default of `None`. Now `catalerum_core::tool::authorize` refuses a context without capabilities, `Tool::required_capability` has no default, and each of the 29 states `None` with a comment saying why it is open (static catalogs, nested-call hosts, the `db:<action>@<conn>` and `skill:use@<name>` checks that run inside `invoke`). The in-tool checks that also treated `None` as trusted (`enforce` in `external_db.rs`, `use_skill`, `query_structured`, `list_connections`, profile-grant and automation-grant attenuation, the action runner's `cap_allows`) now go through `ToolContext::holds` or fail closed. Production paths that relied on `None`: the MCP-endpoint outer server now runs under the endpoint's caps, and `ToolActionRunner` gives a pinned identity without explicit caps the default automation authority (base Member) while `ToolActionRunner::new` states `*:*`. `tool_allowed` (used by `search_tools`/`list_tools`) shares `authorize`, so a context without capabilities sees no tools. Tests that relied on the old behaviour now assert denial; tests that exercise dispatch mechanics use an explicit full-authority context.
+
+Also in this pass: the web client reports a request body that fails to serialize as a new `RestError::Encode` rather than `Decode`, `fetch_object_bytes` goes through `check_status` (an unreadable error body is a transport error like everywhere else), `inject-md-worker.sh` resolves its own path before `cd` so the script really is part of the loader hash (`cat` was silently failing on the relative `$0`), and the §4 crate tree lists all 32 crates.
+
+**2026-11-14. Three small layering leaks closed.** All three keep behaviour as it was. (1) `catalerum-backup` no longer runs SQL itself. Every statement it used (the table and column listing, the `_sqlx_migrations` schema version, `COPY … TO STDOUT`, and the restore path's superuser probe, FK edges, `session_replication_role = replica`, BEGIN, TRUNCATE, `COPY … FROM STDIN` and COMMIT) now lives in `catalerum_store::backup`: `list_tables`, `schema_version`, `copy_out` and a one-connection `RestoreSession` (`open` → `is_superuser`/`fk_edges` → `begin(disable_triggers)` → `truncate` → `copy_in` → `commit`). Backup keeps the artifact layout, gzip, checksums and topological load order, and `sqlx` is now only a dev-dependency there. (2) Neither `api/google_watch.rs` nor ingest names a concrete Google type any more. `catalerum-calendar` has a `CalendarWatcher` trait (`start_watch`/`stop_watch`, implemented by the Google provider) built by `watcher_from_connection_with`, and the worker holds a `&dyn CalendarWatcher`. `catalerum-email` has a `PlaintextReseal` trait built by `plaintext_reseal_from_connection`, which ingest's Gmail reseal path uses instead of `GmailProvider::from_config`. (3) The web stylesheets had raw hex outside the theme blocks. Those colours now use tokens: the existing ok/err/warn trios, the chart ramp (flow node colours alias `--chart-*`), and new `--info-{bg,border,fg}`, `--term-{bg,fg}` and `--mail-canvas`, set in all five theme blocks. The runtime custom theme doesn't set the new tokens and falls back to the `:root` values. Verified with the backup round-trip tests against local Postgres (both restore strategies), the store, ingest, calendar and email suites, and `just lint`.
 
 **2026-11-13. Large files split along their existing seams.** An architecture pass found no crate-level layering violation, but several files had grown past the point where one person can hold them. All of the following are moves with no behaviour change. `catalerum-store/src/repo.rs` (9,332 lines, 52 repo structs) is now a 111-line parent with 27 domain modules under `repo/`; the crate-root re-exports are unchanged. `catalerum-llm/src/agent.rs` keeps the types and `run_loop` and has `agent/{discovery,stream,dispatch,tests}.rs` beside it. In `catalerum-api`, `terminal.rs`, `action_runner.rs` and `config.rs` each became a parent plus children (`terminal/`, `action_runner/`, `config/`), and the object read/write/scan core moved from `routes/storage.rs` to `object_service.rs`, so tools, the action runner and the storage watcher no longer import a route module. In `catalerum-web`, the stylesheet left `lib.rs` for 25 numbered files under `src/style/` joined by `include_str!` in cascade order (byte-identical to the old string), `rest.rs` sends every request through one `send` function, and `flow.rs` and `chat.rs` keep only `FlowEditor` and `ChatPanel` with their helpers in `flow/` and `chat/`. Two real removals: the unimplemented `Channel` trait and its `ChannelTarget`/`OutMessage`/`InMessage` types left `catalerum-core::provider` (the live trait is in `catalerum-channels`), and REST and the automation tools now share `tools::compile_automation_triggers` instead of two copies.
 

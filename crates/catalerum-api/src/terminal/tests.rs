@@ -18,6 +18,10 @@ impl Tool for RecordingTerminalTool {
     fn name(&self) -> &str {
         self.name
     }
+    /// Test tool: open.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "test terminal tool"
@@ -154,7 +158,7 @@ async fn terminal_subagent_registry_is_exact_and_pins_the_session() {
         .dispatch(
             "terminal_write",
             json!({ "session_id": TerminalSessionId::new(), "data": "cargo test\n" }),
-            &ToolContext::default(),
+            &crate::test_support::full_authority(),
         )
         .await
         .expect("pinned terminal dispatch");
@@ -181,7 +185,7 @@ async fn finish_work_records_one_evidence_backed_verdict() {
         "summary": "Implemented the scoped change."
     });
     let result = tool
-        .invoke(args.clone(), &ToolContext::default())
+        .invoke(args.clone(), &crate::test_support::full_authority())
         .await
         .expect("first verdict");
     assert_eq!(result["goal"]["met"], true);
@@ -192,7 +196,7 @@ async fn finish_work_records_one_evidence_backed_verdict() {
             .map(|verdict| verdict.evidence.len()),
         Some(2)
     );
-    assert!(tool.invoke(args, &ToolContext::default()).await.is_err());
+    assert!(tool.invoke(args, &crate::test_support::full_authority()).await.is_err());
 }
 
 #[test]
@@ -229,7 +233,7 @@ async fn terminal_upstream_dispatches_only_parent_selected_tools() {
         description: "PR boundary".into(),
         allowed_tools: vec!["update_pr".into()],
         parent_registry: parent,
-        parent_ctx: ToolContext::default(),
+        parent_ctx: crate::test_support::full_authority(),
         cancel: CancellationToken::new(),
     };
     let result = upstream
@@ -238,7 +242,7 @@ async fn terminal_upstream_dispatches_only_parent_selected_tools() {
                 "tool": "update_pr",
                 "arguments": { "pull_request_id": "pr-42", "body": "status" }
             }),
-            &ToolContext::default(),
+            &crate::test_support::full_authority(),
         )
         .await
         .expect("selected parent tool");
@@ -253,7 +257,7 @@ async fn terminal_upstream_dispatches_only_parent_selected_tools() {
     let denied = upstream
         .invoke(
             json!({ "tool": "update_other_pr", "arguments": {} }),
-            &ToolContext::default(),
+            &crate::test_support::full_authority(),
         )
         .await
         .expect_err("tool outside allow-list");

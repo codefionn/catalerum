@@ -22,8 +22,8 @@ use catalerum_core::error::{Error, Result};
 use catalerum_core::id::{ConnectionId, WorkspaceId};
 use catalerum_core::model::Connection;
 use catalerum_email::{
-    reseal_gmail_plaintext, EmailSubKind, GmailProvider, GmailResealer, GmailTokenStore,
-    GmailTokens, GMAIL_PLAINTEXT_KEYS,
+    plaintext_reseal_from_connection, reseal_gmail_plaintext, EmailSubKind, GmailResealer,
+    GmailTokenStore, GmailTokens, GMAIL_PLAINTEXT_KEYS,
 };
 use catalerum_store::{ConnectionRepo, SecretStore};
 
@@ -178,9 +178,7 @@ pub async fn reseal_plaintext_gmail_if_applicable(
 
     if connection.credential_ref.is_none() {
         // Plaintext path: prove the creds work, then seal → ref → scrub.
-        let Ok(provider) =
-            GmailProvider::from_config(connection.workspace_id, connection.id, config)
-        else {
+        let Ok(provider) = plaintext_reseal_from_connection(connection, config) else {
             // A Gmail connection lacking the triplet is (mis)configured — nothing to
             // reseal; the sync itself surfaces the config error.
             return;

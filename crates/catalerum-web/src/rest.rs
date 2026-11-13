@@ -51,13 +51,16 @@ use crate::api::{
 use crate::components::emerged::model::{EventName, UiAction, UiDefinition};
 
 /// An error from a REST call: a transport failure, a non-2xx status (carrying
-/// the server's `{"error": …}` message when present), or a JSON decode failure.
+/// the server's `{"error": …}` message when present), a request body that could
+/// not be serialized, or a JSON decode failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RestError {
     /// The fetch could not be performed (network / CORS / offline).
     Transport(String),
     /// The server returned a non-success status; carries status + message.
     Status { status: u16, message: String },
+    /// The request body could not be serialized to JSON; nothing was sent.
+    Encode(String),
     /// The response body could not be decoded into the expected type.
     Decode(String),
 }
@@ -73,6 +76,7 @@ impl std::fmt::Display for RestError {
                     write!(f, "{message} (HTTP {status})")
                 }
             }
+            RestError::Encode(e) => write!(f, "could not encode request: {e}"),
             RestError::Decode(e) => write!(f, "could not parse server response: {e}"),
         }
     }
@@ -125,9 +129,9 @@ fn transport(e: gloo_net::Error) -> RestError {
 }
 
 /// Serialize a request body to JSON. A failure is reported as
-/// [`RestError::Decode`], as it always has been, and no request is sent.
+/// [`RestError::Encode`] and no request is sent.
 fn to_json<B: serde::Serialize>(body: &B) -> Result<String, RestError> {
-    serde_json::to_string(body).map_err(|e| RestError::Decode(e.to_string()))
+    serde_json::to_string(body).map_err(|e| RestError::Encode(e.to_string()))
 }
 
 /// Decode a 2xx response body into `T`.
@@ -2092,13 +2096,7 @@ pub async fn fetch_object_bytes(
     let path = format!("{STORAGE_OBJECTS_PATH}/{}", encode_key_path(key));
     let full = append_store(&url(&path), store);
     let resp = send(Method::GET, &full, token, Payload::Empty, &[], None).await?;
-    let status = resp.status();
-    if !(200..300).contains(&status) {
-        // Unlike `check_status`, an unreadable error body is not a transport
-        // error here: it degrades to an empty message.
-        let body = resp.text().await.unwrap_or_default();
-        return Err(status_error(status, &body, token));
-    }
+    let resp = check_status(resp, token).await?;
     resp.binary().await.map_err(transport)
 }
 
@@ -2244,6 +2242,13 @@ mod tests {
     use super::*;
     // url() resolves the origin via api_base(), which falls back to API_BASE off-wasm.
     use crate::api::API_BASE;
+
+    #[test]
+    fn unserializable_body_is_an_encode_error() {
+        // serde_json refuses non-string map keys.
+        let body: std::collections::BTreeMap<(u8, u8), u8> = [((1, 2), 3)].into();
+        assert!(matches!(to_json(&body), Err(RestError::Encode(_))));
+    }
 
     #[test]
     fn url_joins_root_path() {

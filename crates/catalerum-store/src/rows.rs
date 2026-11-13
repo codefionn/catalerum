@@ -413,6 +413,7 @@ pub fn origin_to_text(origin: Origin) -> Result<String, StoreError> {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MessageRow {
     pub id: Uuid,
+    pub workspace_id: Uuid,
     pub conversation_id: Uuid,
     pub role: String,
     pub content: String,
@@ -442,6 +443,7 @@ pub struct MessageRow {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MessageSearchRow {
     pub id: Uuid,
+    pub workspace_id: Uuid,
     pub conversation_id: Uuid,
     pub role: String,
     pub content: String,
@@ -460,6 +462,7 @@ impl MessageSearchRow {
         (
             MessageRow {
                 id: self.id,
+                workspace_id: self.workspace_id,
                 conversation_id: self.conversation_id,
                 role: self.role,
                 content: self.content,
@@ -507,6 +510,7 @@ impl TryFrom<MessageRow> for Message {
             });
         Ok(Message {
             id: MessageId::from_uuid(r.id),
+            workspace_id: WorkspaceId::from_uuid(r.workspace_id),
             conversation_id: ConversationId::from_uuid(r.conversation_id),
             role: enum_from_text::<MessageRole>(&r.role)?,
             content: r.content,

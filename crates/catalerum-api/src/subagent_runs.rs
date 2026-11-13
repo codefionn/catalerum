@@ -335,6 +335,10 @@ impl Tool for MonitorSubagentTool {
     fn name(&self) -> &str {
         "monitor_subagent"
     }
+    /// Open: reaches only runs started by this same principal, grant and conversation.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
+    }
 
     fn description(&self) -> &str {
         "Inspect one background subagent run, or list all runs created by this same workspace, principal, grant, and conversation. Completed results are returned only when a run_id is supplied."
@@ -368,6 +372,10 @@ struct WaitSubagentTool {
 impl Tool for WaitSubagentTool {
     fn name(&self) -> &str {
         "wait_subagent"
+    }
+    /// Open: reaches only runs started by this same principal, grant and conversation.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
 
     fn description(&self) -> &str {
@@ -420,6 +428,10 @@ struct StopSubagentTool {
 impl Tool for StopSubagentTool {
     fn name(&self) -> &str {
         "stop_subagent"
+    }
+    /// Open: reaches only runs started by this same principal, grant and conversation.
+    fn required_capability(&self) -> Option<catalerum_core::capability::Capability> {
+        None
     }
 
     fn description(&self) -> &str {

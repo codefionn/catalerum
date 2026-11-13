@@ -72,9 +72,9 @@
   padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
   line-height: 1.4; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg);
 }
-.eu-badge-info { background: #1c2c4a; color: #cfe0ff; border-color: #2f4a7a; }
+.eu-badge-info { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-border); }
 .eu-badge-success { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
-.eu-badge-warn { background: #3a2e12; color: #f2d48b; border-color: #6a5320; }
+.eu-badge-warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
 .eu-badge-error { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-border); }
 
 /* Progress bar. */

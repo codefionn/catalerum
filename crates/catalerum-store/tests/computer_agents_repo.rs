@@ -83,9 +83,29 @@ async fn computer_agent_enroll_touch_revoke_and_isolation() {
         protocol: PROTOCOL_VERSION,
         ..Default::default()
     };
+    // Another workspace's id cannot touch it (SOUL §18) — NotFound, no write.
+    assert!(matches!(
+        store
+            .computer_agents()
+            .touch_seen(other.id, agent.id, &caps)
+            .await,
+        Err(catalerum_store::StoreError::NotFound)
+    ));
+    assert!(store
+        .computer_agents()
+        .get(ws.id, agent.id)
+        .await
+        .expect("get after foreign touch")
+        .last_seen_at
+        .is_none());
+    assert!(store
+        .computer_agents()
+        .get(other.id, agent.id)
+        .await
+        .is_err());
     store
         .computer_agents()
-        .touch_seen(agent.id, &caps)
+        .touch_seen(ws.id, agent.id, &caps)
         .await
         .expect("touch");
     let refreshed = store
@@ -154,7 +174,19 @@ async fn computer_agent_enroll_touch_revoke_and_isolation() {
         .expect("row retained after revoke");
     assert!(!post.is_active() && post.revoked_at.is_some());
 
-    // (7) Delete removes the row.
+    // (7) Another workspace can neither revoke nor delete it.
+    assert!(store
+        .computer_agents()
+        .revoke(other.id, agent.id)
+        .await
+        .is_err());
+    assert!(store
+        .computer_agents()
+        .delete(other.id, agent.id)
+        .await
+        .is_err());
+
+    // (8) Delete removes the row.
     store
         .computer_agents()
         .delete(ws.id, agent.id)
