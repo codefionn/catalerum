@@ -267,6 +267,7 @@ impl ChatTurnStarter for FakeChatStarter {
                     reply,
                     stopped: false,
                     truncated: false,
+                    output_limited: false,
                 })
             }),
         })
@@ -2145,6 +2146,16 @@ fn agent_outcome_empty_output_is_a_failed_step() {
         out.output.as_ref().unwrap()["tool_loop_capped"],
         json!(true)
     );
+    assert!(out.output.as_ref().unwrap().get("output_capped").is_none());
+
+    let output_capped = AgentOutcome {
+        content: "cut off mid-sen".into(),
+        iterations: 4,
+        hit_output_limit: true,
+        ..Default::default()
+    };
+    let out = agent_outcome_to_action(&output_capped, None);
+    assert_eq!(out.output.as_ref().unwrap()["output_capped"], json!(true));
 }
 
 #[test]

@@ -230,6 +230,11 @@ enum ServerFrame {
         /// finishing — the reply is a best-effort partial, so the client flags it.
         #[serde(default)]
         truncated: bool,
+        /// `true` iff the reply ran into the model's output-token limit and the
+        /// loop could not finish it by continuing — the text stops mid-thought
+        /// (or is empty), so the client flags it.
+        #[serde(default)]
+        output_limited: bool,
         /// `true` iff the user stopped the turn (SOUL §12) — the reply is a
         /// deliberate partial, and any queued-but-not-yet-injected user messages
         /// were discarded (the client returns them to its composer).
@@ -411,6 +416,7 @@ impl TurnSink {
             content: String::new(),
             reconcile: false,
             truncated: false,
+            output_limited: false,
             stopped: false,
             cost_usd: None,
             prompt_tokens: None,
@@ -777,6 +783,8 @@ pub(crate) struct TurnReport {
     pub(crate) stopped: bool,
     /// The loop hit its iteration or tool-loop cap.
     pub(crate) truncated: bool,
+    /// The reply was cut off by the model's output-token limit.
+    pub(crate) output_limited: bool,
 }
 
 /// A syntactically valid stream cursor — `{ms}` or `{ms}-{seq}`, digits only —
@@ -1046,6 +1054,7 @@ fn empty_done_bytes(turn: TurnId) -> Vec<u8> {
         content: String::new(),
         reconcile: true,
         truncated: false,
+        output_limited: false,
         stopped: false,
         cost_usd: None,
         prompt_tokens: None,
@@ -1932,6 +1941,7 @@ async fn run_turn(
         content: outcome.content.clone(),
         stopped: outcome.stopped,
         truncated: outcome.hit_iteration_cap || outcome.hit_tool_loop_cap,
+        output_limited: outcome.hit_output_limit,
     };
 
     // 5. Terminal message_done frame — the last entry in the turn buffer, which
@@ -1944,6 +1954,7 @@ async fn run_turn(
         user_message_id: user_msg.id,
         conversation_id,
         truncated: outcome.hit_iteration_cap || outcome.hit_tool_loop_cap,
+        output_limited: outcome.hit_output_limit,
         stopped: outcome.stopped,
         cost_usd: outcome.usage.as_ref().and_then(|u| u.cost_usd),
         prompt_tokens: outcome.usage.as_ref().map(|u| u.prompt_tokens),

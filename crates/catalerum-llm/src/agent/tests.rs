@@ -574,6 +574,86 @@ async fn streaming_loop_recovers_once_from_an_empty_final_response() {
     }));
 }
 
+fn text_turn_ending(text: &str, finish_reason: FinishReason) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+    if !text.is_empty() {
+        events.push(StreamEvent::TextDelta { text: text.into() });
+    }
+    events.push(StreamEvent::Done {
+        finish_reason: Some(finish_reason),
+        usage: None,
+    });
+    events
+}
+
+async fn run_text_turns(turns: Vec<Vec<StreamEvent>>) -> (AgentOutcome, Vec<usize>) {
+    let streamer = ScriptedStreamer::scripted(turns);
+    let mut obs = RecordingObserver::default();
+    let outcome = run_loop(
+        &streamer,
+        ChatRequest::new("m", vec![ChatMessage::user("write it")]),
+        &ToolRegistry::new(),
+        &full_authority(),
+        &AgentConfig::default(),
+        None,
+        &mut obs,
+    )
+    .await
+    .unwrap();
+    let counts = streamer.seen_message_counts.lock().unwrap().clone();
+    (outcome, counts)
+}
+
+#[tokio::test]
+async fn streaming_loop_continues_an_answer_cut_off_by_the_output_limit() {
+    let (outcome, counts) = run_text_turns(vec![
+        text_turn_ending("first half, ", FinishReason::Length),
+        text_turn_ending("second half.", FinishReason::Stop),
+    ])
+    .await;
+
+    // The pieces join into one reply and the run is a clean finish.
+    assert_eq!(outcome.content, "first half, second half.");
+    assert!(!outcome.hit_output_limit);
+    assert_eq!(outcome.iterations, 2);
+    // Turn 2 saw the partial answer plus the continue nudge, sent as a user
+    // message so the history never ends on assistant text.
+    assert_eq!(counts, vec![1usize, 3usize]);
+    let nudge = &outcome.messages[2];
+    assert_eq!(nudge.role, MessageRole::User);
+    assert!(nudge.content.contains("cut off by the output-token limit"));
+}
+
+#[tokio::test]
+async fn streaming_loop_flags_an_answer_still_cut_off_after_its_continuations() {
+    let turns = (0..=MAX_OUTPUT_CONTINUATIONS)
+        .map(|_| text_turn_ending("more ", FinishReason::Length))
+        .collect();
+    let (outcome, _) = run_text_turns(turns).await;
+
+    assert!(outcome.hit_output_limit);
+    assert_eq!(outcome.iterations, MAX_OUTPUT_CONTINUATIONS + 1);
+    assert_eq!(
+        outcome.content,
+        "more ".repeat(MAX_OUTPUT_CONTINUATIONS + 1)
+    );
+}
+
+#[tokio::test]
+async fn streaming_loop_flags_a_turn_whose_whole_allowance_went_to_reasoning() {
+    // Empty and cut off twice: the one empty-response retry runs, then the run
+    // ends flagged instead of passing for a clean, blank answer.
+    let (outcome, _) = run_text_turns(vec![
+        text_turn_ending("", FinishReason::Length),
+        text_turn_ending("", FinishReason::Length),
+    ])
+    .await;
+
+    assert!(outcome.hit_output_limit);
+    assert_eq!(outcome.content, "");
+    assert_eq!(outcome.iterations, 2);
+}
+
 #[tokio::test]
 async fn streaming_loop_carries_reasoning_into_assistant_turn() {
     // Round 1 emits reasoning + a tool call; the assistant message the loop

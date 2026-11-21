@@ -67,6 +67,7 @@ impl ChatTurnStarter for AppChatStarter {
                 reply: report.content,
                 stopped: report.stopped,
                 truncated: report.truncated,
+                output_limited: report.output_limited,
             })
         });
         Ok(StartedChatTurn {

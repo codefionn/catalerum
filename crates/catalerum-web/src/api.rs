@@ -530,6 +530,10 @@ pub enum ServerFrame {
         /// is a best-effort partial, so the UI appends a "cut off" note.
         #[serde(default)]
         truncated: bool,
+        /// `true` iff the reply was cut off by the model's output-token limit.
+        /// Absent on older servers.
+        #[serde(default)]
+        output_limited: bool,
         /// `true` iff the user stopped the turn (the Stop button) — the reply is
         /// a deliberate partial, and any still-queued (not yet placed) user
         /// messages were discarded server-side, so the UI returns them to the
@@ -708,6 +712,7 @@ impl ServerFrame {
             ServerFrame::MessageDone {
                 user_message_id,
                 truncated,
+                output_limited,
                 stopped,
                 cost_usd,
                 prompt_tokens,
@@ -720,6 +725,7 @@ impl ServerFrame {
                 ..
             } => StreamUpdate::Done {
                 truncated,
+                output_limited,
                 stopped,
                 cost_usd,
                 tokens: TurnTokens::from_parts(
@@ -865,6 +871,8 @@ pub enum StreamUpdate {
     /// when usage was reported.
     Done {
         truncated: bool,
+        /// The reply ran into the model's output-token limit (a partial reply).
+        output_limited: bool,
         stopped: bool,
         cost_usd: Option<f64>,
         tokens: Option<TurnTokens>,
@@ -4075,6 +4083,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: false,
+                output_limited: false,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4083,6 +4092,17 @@ mod tests {
                 reconcile: false,
             }
         );
+        // So does `output_limited` (the reply hit the model's output-token limit).
+        assert!(matches!(
+            parse_frame(
+                r#"{"type":"message_done","message_id":"m1","conversation_id":"c1","content":"hi","output_limited":true}"#
+            ),
+            StreamUpdate::Done {
+                output_limited: true,
+                truncated: false,
+                ..
+            }
+        ));
         // A truncated terminal frame carries `truncated: true` through to the UI.
         assert_eq!(
             parse_frame(
@@ -4090,6 +4110,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: true,
+                output_limited: false,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4105,6 +4126,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: false,
+                output_limited: false,
                 stopped: false,
                 cost_usd: Some(0.0123),
                 tokens: None,
@@ -4122,6 +4144,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: false,
+                output_limited: false,
                 stopped: false,
                 cost_usd: None,
                 tokens: Some(TurnTokens {
@@ -4144,6 +4167,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: false,
+                output_limited: false,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4164,6 +4188,7 @@ mod tests {
             ),
             StreamUpdate::Done {
                 truncated: false,
+                output_limited: false,
                 stopped: true,
                 cost_usd: None,
                 tokens: None,

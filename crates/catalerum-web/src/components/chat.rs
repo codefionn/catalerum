@@ -1317,6 +1317,7 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                         }
                         Some(StreamUpdate::Done {
                             truncated,
+                            output_limited,
                             stopped,
                             reconcile,
                             cost_usd,
@@ -1334,6 +1335,14 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                                 append_to(
                                     cur_id,
                                     "\n\n_(response cut off — the assistant reached its tool-use limit)_",
+                                );
+                            }
+                            // The reply ran into the model's output-token limit and
+                            // could not be finished by continuing it.
+                            if output_limited {
+                                append_to(
+                                    cur_id,
+                                    "\n\n_(response cut off — the model reached its output limit; ask it to continue)_",
                                 );
                             }
                             // The user pressed Stop — mark the deliberate partial.

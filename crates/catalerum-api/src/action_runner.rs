@@ -669,6 +669,13 @@ impl ToolActionRunner {
                 "agent action stopped a repeated/unsuccessful tool-call loop; the reply may be incomplete"
             );
         }
+        if outcome.hit_output_limit {
+            tracing::warn!(
+                workspace = %workspace_id,
+                iterations = outcome.iterations,
+                "agent action reply was cut off by the model's output-token limit; the reply is incomplete"
+            );
+        }
         if outcome.hit_cost_limit {
             tracing::warn!(
                 workspace = %workspace_id,

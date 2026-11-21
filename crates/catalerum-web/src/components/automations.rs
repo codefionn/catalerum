@@ -1262,7 +1262,8 @@ fn compact_json(value: &Value) -> String {
 
 /// Pull `(cost_usd, cap_note)` from an agent step's output JSON for the run detail.
 /// `cap_note` names *why* a run was truncated — "budget reached" (the grant's §19
-/// `cost_limit` ceiling), "repeated tool loop", or "max tool rounds" — else `None`.
+/// `cost_limit` ceiling), "repeated tool loop", "max tool rounds", or "output
+/// limit" (the reply was cut off by the model's output-token limit) — else `None`.
 /// Non-agent steps (no such keys) yield `(None, None)`.
 fn agent_run_cost_and_cap(output: Option<&Value>) -> (Option<f64>, Option<&'static str>) {
     let Some(o) = output else {
@@ -1275,6 +1276,8 @@ fn agent_run_cost_and_cap(output: Option<&Value>) -> (Option<f64>, Option<&'stat
         Some("repeated tool loop")
     } else if o.get("iteration_capped").and_then(Value::as_bool) == Some(true) {
         Some("max tool rounds")
+    } else if o.get("output_capped").and_then(Value::as_bool) == Some(true) {
+        Some("output limit")
     } else {
         None
     };
@@ -1645,6 +1648,10 @@ mod tests {
         assert_eq!(
             agent_run_cost_and_cap(Some(&json!({ "tool_loop_capped": true }))),
             (None, Some("repeated tool loop"))
+        );
+        assert_eq!(
+            agent_run_cost_and_cap(Some(&json!({ "output_capped": true }))),
+            (None, Some("output limit"))
         );
     }
 

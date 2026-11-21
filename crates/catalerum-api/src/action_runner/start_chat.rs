@@ -38,6 +38,7 @@ pub(crate) struct ChatTurnReport {
     pub(crate) reply: String,
     pub(crate) stopped: bool,
     pub(crate) truncated: bool,
+    pub(crate) output_limited: bool,
 }
 
 /// A started turn: its user message id is known up front; `done` resolves when
@@ -230,6 +231,7 @@ impl ToolActionRunner {
                 output["message_id"] = json!(report.message_id);
                 output["reply"] = json!(report.reply);
                 output["truncated"] = json!(report.truncated);
+                output["output_limited"] = json!(report.output_limited);
                 ActionOutcome::succeeded(Some(output))
             }
             // The thread stays: whatever the turn persisted before failing is

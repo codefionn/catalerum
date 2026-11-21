@@ -105,6 +105,11 @@ impl Default for AgentConfig {
     }
 }
 
+/// How many times one run asks the model to continue an answer that was cut off
+/// by the output-token limit before giving up and flagging the reply
+/// ([`AgentOutcome::hit_output_limit`]).
+const MAX_OUTPUT_CONTINUATIONS: usize = 3;
+
 /// The outcome of an [`run_agent`] loop.
 ///
 /// Not `Eq` because [`usage`](Self::usage) carries an `f64` cost.
@@ -138,6 +143,11 @@ pub struct AgentOutcome {
     /// The transcript is a best-effort partial; the answer should be treated as
     /// incomplete.
     pub hit_cost_limit: bool,
+    /// `true` iff the final turn ended on the provider's output-token limit
+    /// ([`FinishReason::Length`]) and the loop could not finish the answer by
+    /// continuing it. The reply stops mid-thought, or is empty when the whole
+    /// allowance went to reasoning, so callers must flag it as incomplete.
+    pub hit_output_limit: bool,
     /// `true` iff the run was halted by [`AgentConfig::cancel`] (the user's Stop).
     /// The transcript is a clean prefix — every persisted tool call carries a
     /// result (real or a synthesized "cancelled" error) — but the answer is
@@ -401,6 +411,11 @@ where
     // successful tool round. One bounded recovery turn prevents the user from
     // receiving a blank final response without risking an infinite loop.
     let mut retried_empty_finish = false;
+    // A turn cut off by the output-token limit is not a finished answer. Ask the
+    // model to pick up where it stopped, a bounded number of times, and join the
+    // pieces into one reply.
+    let mut output_continuations = 0usize;
+    let mut continued_text = String::new();
     // The previous turn's provider-reported usage — the compaction trigger's
     // grounded signal for how big the next prompt really is (the chars/4
     // estimate can undercount). Reset after a compaction: it describes the
@@ -533,6 +548,28 @@ where
         if turn.collected.tool_calls.is_empty() {
             let queued = observer.poll_user_input().await?;
             if queued.is_empty() {
+                let rounds_left = round + 1 < config.max_iterations.max(1);
+                let cut_off = turn.collected.finish_reason == Some(FinishReason::Length);
+                // An empty cut-off turn spent its whole allowance on reasoning;
+                // the single empty-response retry below covers it. Continuing
+                // only makes sense when there is text to continue from.
+                if cut_off && !turn.collected.content.trim().is_empty() {
+                    if output_continuations < MAX_OUTPUT_CONTINUATIONS && rounds_left {
+                        output_continuations += 1;
+                        continued_text.push_str(&turn.collected.content);
+                        // A user-role nudge, not a system one: gateways hoist
+                        // system messages out of the history, which would leave
+                        // the cut-off assistant text as the last message, and
+                        // current models reject that as a prefill.
+                        messages.push(ChatMessage::user(
+                            "Your previous assistant response was cut off by the output-token \
+                             limit. Continue exactly where it stopped. Do not repeat or \
+                             summarize what you already wrote, and do not restart the answer.",
+                        ));
+                        continue;
+                    }
+                    outcome.hit_output_limit = true;
+                }
                 if turn.collected.content.trim().is_empty()
                     && !retried_empty_finish
                     && round + 1 < config.max_iterations.max(1)
@@ -545,10 +582,15 @@ where
                     ));
                     continue;
                 }
-                outcome.content = turn.collected.content;
+                outcome.hit_output_limit |= cut_off;
+                continued_text.push_str(&turn.collected.content);
+                outcome.content = continued_text;
                 outcome.messages = messages;
                 return Ok(outcome);
             }
+            // The user spoke mid-turn: the next turn answers them, so it is a new
+            // reply and not a continuation of the cut-off one.
+            continued_text.clear();
             messages.extend(queued);
             continue;
         }

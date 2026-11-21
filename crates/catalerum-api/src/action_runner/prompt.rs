@@ -41,6 +41,9 @@ pub(super) fn agent_outcome_to_action(outcome: &AgentOutcome, data: Option<Value
     if outcome.hit_tool_loop_cap {
         out["tool_loop_capped"] = json!(true);
     }
+    if outcome.hit_output_limit {
+        out["output_capped"] = json!(true);
+    }
     // A JSON-steered agent attaches its parsed reply as `data` for downstream nodes.
     if let Some(data) = data {
         out["data"] = data;
