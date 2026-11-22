@@ -70,6 +70,7 @@ async fn assistant_message_round_trips_token_and_cost_usage() {
             tool_is_error: false,
             tool_duration_ms: None,
             usage: Some(usage),
+            reasoning: None,
         })
         .await
         .expect("insert assistant");

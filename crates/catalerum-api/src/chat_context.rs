@@ -92,6 +92,37 @@ pub(crate) fn to_chat_messages(history: &[Message]) -> Vec<ChatMessage> {
         .collect()
 }
 
+/// Put stored reasoning blocks back on the replayed assistant turns.
+///
+/// Only blocks produced by `model` are replayed. A signature or encrypted
+/// payload is valid for its own model alone, and another model fails the whole
+/// request over it, so a conversation that moved to a different model replays
+/// those turns without reasoning.
+///
+/// `seed` may hold messages `history` does not (synthetic tool answers, a
+/// summary, system context), so the two are aligned by walking their assistant
+/// messages in order. A pair that does not agree on text and tool calls ends
+/// the walk: attaching a block to the wrong turn would be worse than omitting it.
+pub(crate) fn replay_reasoning(seed: &mut [ChatMessage], history: &[Message], model: &str) {
+    let mut stored = history
+        .iter()
+        .filter(|message| message.role == MessageRole::Assistant);
+    for message in seed
+        .iter_mut()
+        .filter(|message| message.role == MessageRole::Assistant)
+    {
+        let Some(row) = stored.next() else {
+            return;
+        };
+        if message.content != row.content || message.tool_calls != row.tool_calls {
+            return;
+        }
+        if let Some(reasoning) = row.reasoning.as_ref().filter(|r| r.model == model) {
+            message.reasoning_details = reasoning.details.clone();
+        }
+    }
+}
+
 /// Build the content a live or replayed user turn contributes to model context.
 pub(crate) fn user_seed_content(
     content: &str,
@@ -292,6 +323,7 @@ mod tests {
             tool_is_error: false,
             tool_duration_ms: None,
             usage: None,
+            reasoning: None,
             created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
         }
     }
@@ -341,6 +373,64 @@ mod tests {
         assert_eq!(trimmed[0].role, User);
         assert_eq!(trim_to_turn_boundary(&history[..2]).len(), 2);
         assert!(trim_to_turn_boundary(&[]).is_empty());
+    }
+
+    #[test]
+    fn stored_reasoning_replays_only_to_the_model_that_produced_it() {
+        use catalerum_core::model::MessageReasoning;
+        use catalerum_core::stream::ReasoningDetail;
+
+        let signed = |sig: &str| ReasoningDetail {
+            kind: "reasoning.text".to_string(),
+            text: Some(String::new()),
+            signature: Some(sig.to_string()),
+            ..Default::default()
+        };
+        let call = ToolCall {
+            id: "call-1".to_string(),
+            name: "slow".to_string(),
+            arguments: "{}".to_string(),
+        };
+        let mut calling = message(MessageRole::Assistant);
+        calling.tool_calls = vec![call];
+        calling.reasoning = MessageReasoning::new("opus", &[signed("a")]);
+        let mut other_model = message(MessageRole::Assistant);
+        other_model.content = "from another model".to_string();
+        other_model.reasoning = MessageReasoning::new("gpt", &[signed("b")]);
+        let mut answer = message(MessageRole::Assistant);
+        answer.content = "done".to_string();
+        answer.reasoning = MessageReasoning::new("opus", &[signed("c")]);
+        let history = vec![
+            message(MessageRole::User),
+            calling,
+            other_model,
+            answer,
+        ];
+
+        // The seed gains messages the store never held: a synthetic answer for
+        // the dangling call and a leading system message.
+        let mut seed = to_chat_messages(&history);
+        patch_dangling_tool_calls(&mut seed);
+        seed.insert(0, ChatMessage::system("context"));
+        replay_reasoning(&mut seed, &history, "opus");
+
+        let signatures: Vec<Vec<Option<&str>>> = seed
+            .iter()
+            .filter(|m| m.role == MessageRole::Assistant)
+            .map(|m| {
+                m.reasoning_details
+                    .iter()
+                    .map(|d| d.signature.as_deref())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(signatures, vec![vec![Some("a")], vec![], vec![Some("c")]]);
+
+        // Plain conversion never carries reasoning: transcripts for titles and
+        // summaries are built from it.
+        assert!(to_chat_messages(&history)
+            .iter()
+            .all(|m| m.reasoning_details.is_empty()));
     }
 
     #[test]

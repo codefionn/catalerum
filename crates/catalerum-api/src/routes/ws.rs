@@ -1642,6 +1642,9 @@ async fn run_turn(
         .filter(|m| !m.trim().is_empty())
         .or_else(|| chat_profile.as_ref().map(|cp| cp.model.clone()))
         .unwrap_or_else(|| effective_default.clone());
+    // Give the replayed assistant turns back the reasoning blocks this model
+    // signed, now that the model is known.
+    crate::chat_context::replay_reasoning(&mut seed, trimmed, &model);
     // Inlined images (above) only make sense for a model that accepts image input.
     // Effective capability = the gateway catalog OR a force-image override (SOUL
     // §7/§9): the user's own `image_input_models`, or the global
@@ -1791,6 +1794,7 @@ async fn run_turn(
             invoker_caps: &invoker_caps,
             intake,
             final_assistant_id: &mut final_assistant_id,
+            model: &turn_model,
         };
         // The turn's live controls (SOUL §12): the intake's cancel token is the
         // user's Stop button, and the observer's `poll_user_input` drains the
@@ -2067,6 +2071,9 @@ struct StreamObserver<'a> {
     /// target of the summed-usage back-fill and the id the terminal `message_done`
     /// frame carries.
     final_assistant_id: &'a mut Option<MessageId>,
+    /// The model this turn runs on. Stored with each assistant row's reasoning
+    /// blocks, which only that model accepts back.
+    model: &'a str,
 }
 
 impl StreamObserver<'_> {
@@ -2250,6 +2257,10 @@ impl TurnObserver for StreamObserver<'_> {
         // attachments; the exchange's summed usage is back-filled onto the final
         // assistant row by `run_turn` after the loop (the total isn't known until
         // then), so each row inserts with none.
+        let reasoning = catalerum_core::model::MessageReasoning::new(
+            self.model,
+            message.reasoning_details,
+        );
         let stored = self
             .state
             .store()
@@ -2267,6 +2278,7 @@ impl TurnObserver for StreamObserver<'_> {
                 tool_is_error: message.tool_is_error,
                 tool_duration_ms: message.tool_duration_ms,
                 usage: None,
+                reasoning: reasoning.as_ref(),
             })
             .await
             .map_err(|e| catalerum_core::error::Error::other(format!("persist message: {e}")))?;

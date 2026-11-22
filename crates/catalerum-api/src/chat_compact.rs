@@ -201,6 +201,7 @@ mod tests {
             tool_is_error: false,
             tool_duration_ms: None,
             usage: None,
+            reasoning: None,
             created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
         }
     }

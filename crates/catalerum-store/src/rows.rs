@@ -434,6 +434,8 @@ pub struct MessageRow {
     pub cached_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
+    /// An assistant turn's reasoning blocks + producing model, nullable JSONB.
+    pub reasoning: Option<Json<catalerum_core::model::MessageReasoning>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -482,6 +484,7 @@ impl MessageSearchRow {
                 cached_tokens: None,
                 cache_creation_tokens: None,
                 cost_usd: None,
+                reasoning: None,
                 created_at: self.created_at,
             },
             self.conversation_title,
@@ -521,6 +524,7 @@ impl TryFrom<MessageRow> for Message {
             tool_is_error: r.tool_is_error,
             tool_duration_ms: r.tool_duration_ms,
             usage,
+            reasoning: r.reasoning.map(|j| j.0),
             created_at: r.created_at,
         })
     }

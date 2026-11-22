@@ -252,6 +252,10 @@ pub struct CompletedMessage<'a> {
     /// For a tool result, the dispatch's wall-clock duration in milliseconds.
     /// `None` for an assistant turn.
     pub tool_duration_ms: Option<i64>,
+    /// The reasoning blocks an assistant turn emitted, signatures included, so
+    /// the observer can persist them for a later replay. Empty for a tool result
+    /// and for a turn the user stopped mid-stream.
+    pub reasoning_details: &'a [catalerum_core::stream::ReasoningDetail],
 }
 
 /// Observes the raw [`StreamEvent`]s of each model turn as they arrive, so a
@@ -547,6 +551,7 @@ where
                         tool_call_id: None,
                         tool_is_error: false,
                         tool_duration_ms: None,
+                        reasoning_details: &[],
                     })
                     .await?;
             }
@@ -569,6 +574,7 @@ where
                 tool_call_id: None,
                 tool_is_error: false,
                 tool_duration_ms: None,
+                reasoning_details: &turn.collected.reasoning_details,
             })
             .await?;
 
@@ -709,6 +715,7 @@ where
                     tool_call_id: Some(&call.id),
                     tool_is_error: invocation.is_error,
                     tool_duration_ms: Some(invocation.duration_ms as i64),
+                    reasoning_details: &[],
                 })
                 .await?;
             // Deferred advertising (SOUL §7): discovery tools use the historical

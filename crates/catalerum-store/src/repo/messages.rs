@@ -47,6 +47,9 @@ pub struct NewMessage<'a> {
     /// everywhere else. Persisted so a replayed transcript keeps the token
     /// info-icon / cost readout the live turn showed.
     pub usage: Option<catalerum_core::stream::Usage>,
+    /// An assistant turn's reasoning blocks and the model that produced them;
+    /// `None` for every other row and for a turn without reasoning.
+    pub reasoning: Option<&'a catalerum_core::model::MessageReasoning>,
 }
 
 impl<'a> NewMessage<'a> {
@@ -71,6 +74,7 @@ impl<'a> NewMessage<'a> {
             tool_is_error: false,
             tool_duration_ms: None,
             usage: None,
+            reasoning: None,
         }
     }
 }
@@ -114,14 +118,14 @@ impl MessageRepo {
             "INSERT INTO messages \
              (id, workspace_id, conversation_id, role, content, tool_calls, tool_call_id, \
               tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, \
-              cached_tokens, cache_creation_tokens, cost_usd, attachments, skill)
+              cached_tokens, cache_creation_tokens, cost_usd, attachments, skill, reasoning)
              SELECT $1, c.workspace_id, c.id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, \
-                    $14, $15, $16
+                    $14, $15, $16, $18
              FROM conversations c WHERE c.id = $2 AND c.workspace_id = $17
              RETURNING id, workspace_id, conversation_id, role, content, attachments, skill, \
                        tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, \
                        completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, \
-                       cost_usd, created_at",
+                       cost_usd, reasoning, created_at",
         )
         .bind(id)
         .bind(msg.conversation_id.into_uuid())
@@ -140,6 +144,7 @@ impl MessageRepo {
         .bind(Json(msg.attachments.to_vec()))
         .bind(msg.skill.map(Json))
         .bind(msg.workspace_id.into_uuid())
+        .bind(msg.reasoning.map(Json))
         .fetch_one(&self.pool)
         .await
         .map_err(map)?;
@@ -188,7 +193,7 @@ impl MessageRepo {
     /// Fetch a single message by id, workspace-scoped.
     pub async fn get(&self, workspace_id: WorkspaceId, id: MessageId) -> Result<Message> {
         let row: MessageRow = sqlx::query_as(
-            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
              FROM messages WHERE id = $1 AND workspace_id = $2",
         )
         .bind(id.into_uuid())
@@ -206,7 +211,7 @@ impl MessageRepo {
         conversation_id: ConversationId,
     ) -> Result<Vec<Message>> {
         let rows: Vec<MessageRow> = sqlx::query_as(
-            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
              FROM messages WHERE conversation_id = $1 AND workspace_id = $2
              ORDER BY created_at ASC, id ASC",
         )
@@ -227,9 +232,9 @@ impl MessageRepo {
         limit: i64,
     ) -> Result<Vec<Message>> {
         let rows: Vec<MessageRow> = sqlx::query_as(
-            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
              FROM (
-                 SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+                 SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
                  FROM messages WHERE conversation_id = $1 AND workspace_id = $3
                  ORDER BY created_at DESC, id DESC
                  LIMIT $2
@@ -260,9 +265,9 @@ impl MessageRepo {
         limit: i64,
     ) -> Result<Vec<Message>> {
         let rows: Vec<MessageRow> = sqlx::query_as(
-            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+            "SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
              FROM (
-                 SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, created_at
+                 SELECT id, workspace_id, conversation_id, role, content, attachments, skill, tool_calls, tool_call_id, tool_is_error, tool_duration_ms, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cache_creation_tokens, cost_usd, reasoning, created_at
                  FROM messages
                  WHERE conversation_id = $1 AND workspace_id = $4
                    AND (created_at, id) > (

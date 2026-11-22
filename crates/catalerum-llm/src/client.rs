@@ -740,10 +740,9 @@ fn map_responses_usage(usage: &llmleaf_client::ResponsesUsage) -> Usage {
 
 /// A completed `reasoning` output item → core details, one per part, all
 /// sharing the item's output index so [`ReasoningAssembler`] folds them into
-/// one block per item while later items stay distinct. The SDK's typed item
-/// has no `signature` field, so an OpenRouter-signed open-reasoning
-/// block arrives without its signature here; [`to_response_reasoning_item`]
-/// still replays any signature catalerum has (e.g. from persisted history).
+/// one block. The item-level `signature` signs the item's open reasoning, so it
+/// goes on the last open part. Claude rejects a replayed thinking block without
+/// it, which is why it must survive this mapping.
 fn reasoning_details_from_item(
     item: llmleaf_client::ResponseReasoningItem,
     output_index: Option<u32>,
@@ -766,6 +765,21 @@ fn reasoning_details_from_item(
             index: output_index,
             ..Default::default()
         });
+    }
+    if let Some(signature) = item.signature {
+        match details.last_mut() {
+            Some(open) => open.signature = Some(signature),
+            // A signature with no open part still has to come back: it signs
+            // reasoning the provider chose not to show.
+            None => details.push(ReasoningDetail {
+                kind: "reasoning.text".to_string(),
+                text: Some(String::new()),
+                signature: Some(signature),
+                id: item.id.clone(),
+                index: output_index,
+                ..Default::default()
+            }),
+        }
     }
     if let Some(data) = item.encrypted_content {
         details.push(ReasoningDetail {
@@ -890,18 +904,16 @@ fn to_response_items(messages: &[ChatMessage]) -> Vec<llmleaf_client::ResponseIt
 
 /// One core [`ReasoningDetail`] → one `reasoning` input item. Field presence
 /// drives the mapping (the `kind` vocabulary varies by upstream): `text` → a
-/// `content` entry, `summary` → a `summary` entry, `data` → `encrypted_content`.
-/// The SDK's typed item has no `signature` field, but the gateway
-/// accepts the OpenRouter dialect's item-level `signature` on input — so a
-/// signed detail is spliced into a raw item, keeping the signed block intact on
-/// replay (some providers reject an altered/dropped signed block before a tool
-/// call).
+/// `content` entry, `summary` → a `summary` entry, `data` → `encrypted_content`,
+/// `signature` → the item-level `signature`. The block goes back as it came:
+/// some providers reject an altered or unsigned block before a tool call.
 fn to_response_reasoning_item(detail: &ReasoningDetail) -> llmleaf_client::ResponseItem {
     let mut item = llmleaf_client::ResponseReasoningItem {
         id: detail.id.clone(),
         summary: Vec::new(),
         content: Vec::new(),
         encrypted_content: detail.data.clone(),
+        signature: detail.signature.clone(),
     };
     if let Some(summary) = &detail.summary {
         item.summary
@@ -911,21 +923,7 @@ fn to_response_reasoning_item(detail: &ReasoningDetail) -> llmleaf_client::Respo
         item.content
             .push(llmleaf_client::ResponseReasoningText::new(text.clone()));
     }
-    let item = llmleaf_client::ResponseItem::Reasoning(item);
-    let Some(signature) = &detail.signature else {
-        return item;
-    };
-    match serde_json::to_value(&item) {
-        Ok(mut value) => {
-            if let Some(obj) = value.as_object_mut() {
-                obj.insert("signature".to_string(), serde_json::json!(signature));
-            }
-            llmleaf_client::ResponseItem::Other(value)
-        }
-        // Serializing these plain structs cannot realistically fail; if it ever
-        // does, replaying the block unsigned beats dropping it.
-        Err(_) => item,
-    }
+    llmleaf_client::ResponseItem::Reasoning(item)
 }
 
 /// `tool_choice` in the Responses dialect (bare mode string / flat named form).
@@ -1467,6 +1465,7 @@ mod tests {
                 summary: Vec::new(),
                 content: vec![llmleaf_client::ResponseReasoningText::new("Let me think.")],
                 encrypted_content: Some("blob".into()),
+                signature: Some("sig-1".into()),
             });
         let s = stream::iter(vec![
             Ok(delta_ev("response.reasoning_text.delta", "Let me ", 0)),
@@ -1489,6 +1488,56 @@ mod tests {
         assert_eq!(d.data.as_deref(), Some("blob"));
         assert_eq!(d.id.as_deref(), Some("rs_1_0"));
         assert_eq!(d.index, Some(0));
+        // The signature is what lets the block go back to the model next round.
+        assert_eq!(d.signature.as_deref(), Some("sig-1"));
+    }
+
+    #[tokio::test]
+    async fn signed_reasoning_survives_the_round_trip_even_when_hidden() {
+        // Claude can sign reasoning it does not show: the item has an empty text
+        // part and a signature. Both must come back on the next request.
+        let done_item =
+            llmleaf_client::ResponseItem::Reasoning(llmleaf_client::ResponseReasoningItem {
+                id: Some("rs_1_0".into()),
+                content: vec![llmleaf_client::ResponseReasoningText::new("")],
+                signature: Some("sig-hidden".into()),
+                ..Default::default()
+            });
+        let s = stream::iter(vec![
+            Ok(item_ev("response.output_item.done", done_item, 0)),
+            Ok(terminal(
+                "response.completed",
+                snapshot("completed", Vec::new()),
+            )),
+        ]);
+        let collected = collect_turn(into_event_stream(s)).await.unwrap();
+        assert_eq!(collected.reasoning_details.len(), 1);
+        assert_eq!(
+            collected.reasoning_details[0].signature.as_deref(),
+            Some("sig-hidden")
+        );
+
+        let mut assistant = ChatMessage::assistant("");
+        assistant.reasoning_details = collected.reasoning_details;
+        let wire = serde_json::to_value(to_response_items(&[assistant])).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!([{
+                "type": "reasoning",
+                "id": "rs_1_0",
+                "content": [{ "type": "reasoning_text", "text": "" }],
+                "signature": "sig-hidden",
+            }])
+        );
+
+        // A signature on an item with no open part at all is kept too.
+        let bare = llmleaf_client::ResponseReasoningItem {
+            signature: Some("sig-bare".into()),
+            ..Default::default()
+        };
+        let details = reasoning_details_from_item(bare, Some(3));
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].signature.as_deref(), Some("sig-bare"));
     }
 
     #[test]
@@ -1670,8 +1719,7 @@ mod tests {
             serde_json::json!([
                 { "role": "system", "content": "be brief" },
                 { "role": "user", "content": "hi" },
-                // The signed detail rides as a raw item so its signature still
-                // replays even though the typed SDK item cannot carry it.
+                // A signed detail replays with its item-level signature.
                 {
                     "type": "reasoning",
                     "content": [{ "type": "reasoning_text", "text": "because" }],

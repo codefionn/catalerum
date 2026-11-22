@@ -61,6 +61,7 @@ async fn tool_message_round_trips_error_flag_and_duration() {
             tool_is_error: true,
             tool_duration_ms: Some(412),
             usage: None,
+            reasoning: None,
         })
         .await
         .expect("insert tool");

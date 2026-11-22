@@ -375,6 +375,7 @@ mod tests {
             tool_is_error: false,
             tool_duration_ms: None,
             usage: None,
+            reasoning: None,
             created_at: chrono::Utc::now(),
         }
     }

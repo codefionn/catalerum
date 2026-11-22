@@ -1273,7 +1273,39 @@ pub struct Message {
     /// transcripts recorded before this was captured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<crate::stream::Usage>,
+    /// The reasoning blocks an **assistant** turn produced, with the model that
+    /// produced them. Kept so a later turn can replay them to that model.
+    /// Never serialized: the signatures and encrypted payloads are opaque,
+    /// large, and of no use to an API client.
+    #[serde(skip)]
+    pub reasoning: Option<MessageReasoning>,
     pub created_at: DateTime<Utc>,
+}
+
+/// The reasoning ("thinking") blocks of one assistant message, as stored.
+///
+/// A signed or encrypted block is only valid for the model that produced it:
+/// another model rejects the request that carries it. `model` records the
+/// producer so a replay can leave the blocks out when the conversation has
+/// moved to a different model.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageReasoning {
+    /// The model id the turn ran on, as sent to the gateway.
+    pub model: String,
+    /// The blocks, in the order the model emitted them.
+    pub details: Vec<crate::stream::ReasoningDetail>,
+}
+
+impl MessageReasoning {
+    /// The stored value for a turn on `model` that emitted `details`. `None`
+    /// when there is nothing to keep.
+    #[must_use]
+    pub fn new(model: &str, details: &[crate::stream::ReasoningDetail]) -> Option<Self> {
+        (!details.is_empty()).then(|| Self {
+            model: model.to_string(),
+            details: details.to_vec(),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
