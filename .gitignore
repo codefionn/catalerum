@@ -26,3 +26,5 @@
 /*.png
 /.playwright-mcp
 /*_chat.json
+
+/.zvec-grep
