@@ -148,6 +148,9 @@ pub struct AgentOutcome {
     /// continuing it. The reply stops mid-thought, or is empty when the whole
     /// allowance went to reasoning, so callers must flag it as incomplete.
     pub hit_output_limit: bool,
+    /// The provider's error message when the final turn's stream failed. The
+    /// transcript is a best-effort partial.
+    pub stream_error: Option<String>,
     /// `true` iff the run was halted by [`AgentConfig::cancel`] (the user's Stop).
     /// The transcript is a clean prefix — every persisted tool call carries a
     /// result (real or a synthesized "cancelled" error) — but the answer is
@@ -163,6 +166,42 @@ pub struct AgentOutcome {
     /// *sums* every turn). Drives the persistent chat-thread compaction
     /// trigger in `catalerum-api`.
     pub context_tokens: Option<u32>,
+}
+
+impl AgentOutcome {
+    /// Why the run ended without a clean finish, as a stable slug, or `None` for
+    /// a finished answer and for a deliberate Stop. Callers log it and show it to
+    /// the user, so no way of ending short passes for a complete reply.
+    #[must_use]
+    pub fn incomplete_reason(&self) -> Option<&'static str> {
+        if self.stopped {
+            return None;
+        }
+        if self.stream_error.is_some() {
+            return Some("stream_error");
+        }
+        if self.hit_cost_limit {
+            return Some("cost_limit");
+        }
+        if self.hit_iteration_cap {
+            return Some("iteration_cap");
+        }
+        if self.hit_tool_loop_cap {
+            return Some("tool_loop");
+        }
+        if self.hit_output_limit {
+            return Some("output_limit");
+        }
+        match self.finish_reason {
+            Some(FinishReason::Stop | FinishReason::ToolCalls) => None,
+            Some(FinishReason::Length) => Some("output_limit"),
+            // The provider's safety filter declined (Anthropic `refusal`).
+            Some(FinishReason::ContentFilter) => Some("content_filter"),
+            Some(FinishReason::Other) => Some("other"),
+            // The stream closed without a terminal event.
+            None => Some("no_finish"),
+        }
+    }
 }
 
 /// One tool call dispatched during the loop, with its result.
@@ -535,7 +574,8 @@ where
 
         // A stream-level error is terminal — return the best-effort transcript
         // (the observer has already forwarded the error event to the client).
-        if turn.errored {
+        if let Some(error) = turn.error {
+            outcome.stream_error = Some(error);
             outcome.content = turn.collected.content;
             outcome.messages = messages;
             return Ok(outcome);

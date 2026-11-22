@@ -15,8 +15,8 @@ use crate::client::{CollectedTurn, ReasoningAssembler, ToolCallAssembler};
 pub(super) struct StreamedTurn {
     /// The folded turn (text, assembled tool calls, finish reason, usage).
     pub(super) collected: CollectedTurn,
-    /// True if the stream surfaced a terminal [`StreamEvent::Error`].
-    pub(super) errored: bool,
+    /// The message of a terminal [`StreamEvent::Error`], if the stream surfaced one.
+    pub(super) error: Option<String>,
     /// True if the turn was cut short by the caller's cancel token (the user's
     /// Stop): `collected` holds whatever had streamed by then.
     pub(super) stopped: bool,
@@ -44,7 +44,7 @@ where
     let mut reasoning_asm = ReasoningAssembler::default();
     let mut finish_reason = None;
     let mut usage = None;
-    let mut errored = false;
+    let mut error = None;
     let mut stopped = false;
 
     loop {
@@ -82,7 +82,7 @@ where
                 finish_reason = fr;
                 usage = u;
             }
-            StreamEvent::Error { .. } => errored = true,
+            StreamEvent::Error { message } => error = Some(message),
             // Synthesized by the dispatch loop, never produced by the model
             // stream — only here to keep the match exhaustive.
             StreamEvent::ToolCallStarted { .. }
@@ -100,7 +100,7 @@ where
             finish_reason,
             usage,
         },
-        errored,
+        error,
         stopped,
     })
 }
@@ -120,7 +120,7 @@ where
 {
     let mut observer = NoopObserver;
     let turn = stream_turn(streamer, request, cancel, &mut observer).await?;
-    if turn.errored {
+    if turn.error.is_some() {
         return Err(catalerum_core::error::Error::provider(
             "compaction summarize stream errored",
         ));

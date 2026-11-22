@@ -1318,6 +1318,7 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                         Some(StreamUpdate::Done {
                             truncated,
                             output_limited,
+                            end_note,
                             stopped,
                             reconcile,
                             cost_usd,
@@ -1344,6 +1345,11 @@ pub fn ChatPanel(resume: RwSignal<Option<String>>) -> impl IntoView {
                                     cur_id,
                                     "\n\n_(response cut off — the model reached its output limit; ask it to continue)_",
                                 );
+                            }
+                            // Any other way of ending short (a safety-filter
+                            // decline, the cost limit, a stream that closed early).
+                            if let Some(note) = end_note {
+                                append_to(cur_id, &format!("\n\n{note}"));
                             }
                             // The user pressed Stop — mark the deliberate partial.
                             if stopped {

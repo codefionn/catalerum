@@ -235,6 +235,11 @@ enum ServerFrame {
         /// (or is empty), so the client flags it.
         #[serde(default)]
         output_limited: bool,
+        /// Why the turn ended without a clean finish, as a slug
+        /// ([`AgentOutcome::incomplete_reason`](catalerum_llm::AgentOutcome::incomplete_reason)):
+        /// `content_filter`, `cost_limit`, `no_finish`, … Omitted for a finished reply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_reason: Option<String>,
         /// `true` iff the user stopped the turn (SOUL §12) — the reply is a
         /// deliberate partial, and any queued-but-not-yet-injected user messages
         /// were discarded (the client returns them to its composer).
@@ -417,6 +422,7 @@ impl TurnSink {
             reconcile: false,
             truncated: false,
             output_limited: false,
+            end_reason: None,
             stopped: false,
             cost_usd: None,
             prompt_tokens: None,
@@ -1055,6 +1061,7 @@ fn empty_done_bytes(turn: TurnId) -> Vec<u8> {
         reconcile: true,
         truncated: false,
         output_limited: false,
+        end_reason: None,
         stopped: false,
         cost_usd: None,
         prompt_tokens: None,
@@ -1936,6 +1943,35 @@ async fn run_turn(
         .await;
     }
 
+    // One line per turn, so a reply that ended short can be traced afterwards:
+    // without it a refusal, a closed stream or a cap leaves nothing in the logs.
+    let end_reason = outcome.incomplete_reason();
+    match end_reason {
+        Some(reason) => tracing::warn!(
+            conversation_id = %conversation_id,
+            model = %turn_model,
+            reason,
+            finish_reason = ?outcome.finish_reason,
+            stream_error = outcome.stream_error.as_deref(),
+            iterations = outcome.iterations,
+            tool_calls = outcome.tool_invocations.len(),
+            completion_tokens = outcome.usage.as_ref().map(|u| u.completion_tokens),
+            reply_chars = outcome.content.len(),
+            "chat turn ended without a clean finish"
+        ),
+        None => tracing::info!(
+            conversation_id = %conversation_id,
+            model = %turn_model,
+            finish_reason = ?outcome.finish_reason,
+            stopped = outcome.stopped,
+            iterations = outcome.iterations,
+            tool_calls = outcome.tool_invocations.len(),
+            completion_tokens = outcome.usage.as_ref().map(|u| u.completion_tokens),
+            reply_chars = outcome.content.len(),
+            "chat turn finished"
+        ),
+    }
+
     let report = TurnReport {
         final_message_id: final_assistant_id,
         content: outcome.content.clone(),
@@ -1955,6 +1991,7 @@ async fn run_turn(
         conversation_id,
         truncated: outcome.hit_iteration_cap || outcome.hit_tool_loop_cap,
         output_limited: outcome.hit_output_limit,
+        end_reason: end_reason.map(str::to_string),
         stopped: outcome.stopped,
         cost_usd: outcome.usage.as_ref().and_then(|u| u.cost_usd),
         prompt_tokens: outcome.usage.as_ref().map(|u| u.prompt_tokens),

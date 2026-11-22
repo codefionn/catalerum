@@ -639,6 +639,38 @@ async fn streaming_loop_flags_an_answer_still_cut_off_after_its_continuations() 
     );
 }
 
+#[test]
+fn incomplete_reason_names_every_way_of_ending_short() {
+    let finished = |finish_reason| AgentOutcome {
+        finish_reason,
+        ..Default::default()
+    };
+    assert_eq!(finished(Some(FinishReason::Stop)).incomplete_reason(), None);
+    assert_eq!(
+        finished(Some(FinishReason::ContentFilter)).incomplete_reason(),
+        Some("content_filter")
+    );
+    assert_eq!(finished(Some(FinishReason::Other)).incomplete_reason(), Some("other"));
+    assert_eq!(finished(None).incomplete_reason(), Some("no_finish"));
+    let cost = AgentOutcome {
+        hit_cost_limit: true,
+        finish_reason: Some(FinishReason::ToolCalls),
+        ..Default::default()
+    };
+    assert_eq!(cost.incomplete_reason(), Some("cost_limit"));
+    let errored = AgentOutcome {
+        stream_error: Some("upstream 529".into()),
+        ..Default::default()
+    };
+    assert_eq!(errored.incomplete_reason(), Some("stream_error"));
+    // A deliberate Stop is not an incomplete run.
+    let stopped = AgentOutcome {
+        stopped: true,
+        ..Default::default()
+    };
+    assert_eq!(stopped.incomplete_reason(), None);
+}
+
 #[tokio::test]
 async fn streaming_loop_flags_a_turn_whose_whole_allowance_went_to_reasoning() {
     // Empty and cut off twice: the one empty-response retry runs, then the run

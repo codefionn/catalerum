@@ -534,6 +534,11 @@ pub enum ServerFrame {
         /// Absent on older servers.
         #[serde(default)]
         output_limited: bool,
+        /// Why the turn ended without a clean finish (`content_filter`,
+        /// `cost_limit`, `no_finish`, …). Absent for a finished reply and on
+        /// older servers.
+        #[serde(default)]
+        end_reason: Option<String>,
         /// `true` iff the user stopped the turn (the Stop button) — the reply is
         /// a deliberate partial, and any still-queued (not yet placed) user
         /// messages were discarded server-side, so the UI returns them to the
@@ -703,6 +708,23 @@ pub enum StreamEvent {
     Unknown,
 }
 
+/// The note the chat appends for a `message_done.end_reason` the `truncated` and
+/// `output_limited` flags don't already explain. `None` for those, for a stream
+/// error (the error frame shows it) and for slugs this client doesn't know.
+#[must_use]
+pub fn end_reason_note(reason: &str) -> Option<&'static str> {
+    match reason {
+        "content_filter" => Some(
+            "_(response stopped — the model provider's safety filter declined to continue)_",
+        ),
+        "cost_limit" => Some("_(response cut off — the cost limit for this run was reached)_"),
+        "no_finish" | "other" => Some(
+            "_(response ended early — the model stream closed before the answer finished; ask it to continue)_",
+        ),
+        _ => None,
+    }
+}
+
 impl ServerFrame {
     /// Normalize this frame into a [`StreamUpdate`] the UI reasons about.
     #[must_use]
@@ -713,6 +735,7 @@ impl ServerFrame {
                 user_message_id,
                 truncated,
                 output_limited,
+                end_reason,
                 stopped,
                 cost_usd,
                 prompt_tokens,
@@ -726,6 +749,7 @@ impl ServerFrame {
             } => StreamUpdate::Done {
                 truncated,
                 output_limited,
+                end_note: end_reason.as_deref().and_then(end_reason_note),
                 stopped,
                 cost_usd,
                 tokens: TurnTokens::from_parts(
@@ -873,6 +897,9 @@ pub enum StreamUpdate {
         truncated: bool,
         /// The reply ran into the model's output-token limit (a partial reply).
         output_limited: bool,
+        /// A note for a reply that ended short for a reason the two flags above
+        /// don't cover (see [`end_reason_note`]).
+        end_note: Option<&'static str>,
         stopped: bool,
         cost_usd: Option<f64>,
         tokens: Option<TurnTokens>,
@@ -4084,6 +4111,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: false,
                 output_limited: false,
+                end_note: None,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4103,6 +4131,16 @@ mod tests {
                 ..
             }
         ));
+        // An `end_reason` the flags don't cover becomes a note; one they do, or an
+        // unknown slug, does not.
+        assert!(matches!(
+            parse_frame(
+                r#"{"type":"message_done","message_id":"m1","conversation_id":"c1","content":"","end_reason":"content_filter"}"#
+            ),
+            StreamUpdate::Done { end_note: Some(note), .. } if note.contains("safety filter")
+        ));
+        assert_eq!(end_reason_note("output_limit"), None);
+        assert_eq!(end_reason_note("something_new"), None);
         // A truncated terminal frame carries `truncated: true` through to the UI.
         assert_eq!(
             parse_frame(
@@ -4111,6 +4149,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: true,
                 output_limited: false,
+                end_note: None,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4127,6 +4166,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: false,
                 output_limited: false,
+                end_note: None,
                 stopped: false,
                 cost_usd: Some(0.0123),
                 tokens: None,
@@ -4145,6 +4185,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: false,
                 output_limited: false,
+                end_note: None,
                 stopped: false,
                 cost_usd: None,
                 tokens: Some(TurnTokens {
@@ -4168,6 +4209,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: false,
                 output_limited: false,
+                end_note: None,
                 stopped: false,
                 cost_usd: None,
                 tokens: None,
@@ -4189,6 +4231,7 @@ mod tests {
             StreamUpdate::Done {
                 truncated: false,
                 output_limited: false,
+                end_note: None,
                 stopped: true,
                 cost_usd: None,
                 tokens: None,
