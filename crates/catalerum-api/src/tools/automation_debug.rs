@@ -567,7 +567,7 @@ impl Tool for DiagnoseAutomationTool {
                 .join(", ");
             hints.push(match &authority.grant {
                 Some(g) => format!(
-                    "Grant '{}' lacks {list}. An Owner/Admin can extend it, or call set_automation_grant {{\"name\": \"{}\", \"capabilities\": [{list}]}} to bind a dedicated grant (default Member authority plus these).",
+                    "Grant '{}' lacks {list}. An Owner/Admin should call set_automation_grant {{\"name\": \"{}\", \"capabilities\": [{list}]}}; that adds these to the grant and keeps what it already holds.",
                     g.name, automation.name
                 ),
                 None => format!(
@@ -721,12 +721,15 @@ impl Tool for SetAutomationGrantTool {
          Member capabilities, so nodes that need e.g. `exec:run` (open_terminal, \
          run_command, terminal_*) are denied on every run. Three forms: \
          (1) {name, grant} binds an existing grant by name (see list_grants); \
-         (2) {name, capabilities: [\"exec:run\", ...]} mints a grant (named `grant`, \
-         default \"automation:<name>\") holding the default Member authority plus \
-         these capabilities (set include_default=false for exactly these) and binds \
-         it; (3) {name, unbind: true} returns to the default authority. A grant \
-         replaces the default authority, and can never exceed your own. Returns the \
-         new authority and any nodes it still does not cover."
+         (2) {name, capabilities: [\"exec:run\", ...]} ADDS these capabilities to the \
+         grant named `grant` (default: the grant the automation is already bound to, \
+         else \"automation:<name>\") and binds it; capabilities the grant already holds \
+         are kept. A grant that does not exist yet is minted with the default Member \
+         authority plus these (include_default=false for exactly these). Pass \
+         replace=true to set the grant to exactly the default authority plus these, \
+         dropping everything else it held; (3) {name, unbind: true} returns to the \
+         default authority. A grant replaces the default authority, and can never \
+         exceed your own. Returns the new authority and any nodes it still does not cover."
     }
     fn parameters_schema(&self) -> Json {
         json!({
@@ -737,9 +740,10 @@ impl Tool for SetAutomationGrantTool {
                 "capabilities": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "Capability tokens for a new grant, `domain:action[@selector]`, e.g. \"exec:run\", \"web:read\", \"storage:write@default/reports/*\", \"note:delete\"."
+                    "description": "Capability tokens to add to the grant, `domain:action[@selector]`, e.g. \"exec:run\", \"web:read\", \"storage:write@default/reports/*\", \"note:delete\". List only what is missing: the grant keeps what it already holds unless `replace` is true."
                 },
-                "include_default": { "type": "boolean", "description": "With `capabilities`: also include the default Member authority (default true). The grant replaces the default, so leaving this on keeps ordinary read/write working." },
+                "include_default": { "type": "boolean", "description": "With `capabilities`, when minting a new grant or with `replace`: also include the default Member authority (default true). The grant replaces the default, so leaving this on keeps ordinary read/write working." },
+                "replace": { "type": "boolean", "description": "With `capabilities`: replace the grant's capabilities instead of adding to them (default false). Drops every capability not listed, so a terminal or storage permission granted earlier is lost unless you list it again." },
                 "unbind": { "type": "boolean", "description": "Remove the grant; runs fall back to the default authority." }
             },
             "required": ["name"]
@@ -765,27 +769,44 @@ impl Tool for SetAutomationGrantTool {
             if extra.is_empty() {
                 return Err(Error::invalid("`capabilities` is empty"));
             }
+            let replace = args.get("replace").and_then(Json::as_bool).unwrap_or(false);
             let include_default = args
                 .get("include_default")
                 .and_then(Json::as_bool)
                 .unwrap_or(true);
-            let base = if include_default {
-                default_automation_capabilities()
-            } else {
-                Vec::new()
+            let all_grants = self.store.grants().list_by_workspace(ws).await?;
+            // Default to the grant the automation already runs under, so "add
+            // what diagnose_automation says is missing" extends the live grant
+            // instead of minting a second one without its other capabilities.
+            let gname = grant_name
+                .or_else(|| {
+                    automation
+                        .grant_id
+                        .and_then(|id| all_grants.iter().find(|g| g.id == id))
+                        .map(|g| g.name.clone())
+                })
+                .unwrap_or_else(|| format!("automation:{}", automation.name));
+            let existing = all_grants.into_iter().find(|g| g.name == gname);
+            // Adding to an existing grant keeps what it holds: re-running this to
+            // fix one missing capability must not drop the ones fixed before
+            // (that ping-pong removed exec:run from a live automation's grant).
+            let (base, held) = match &existing {
+                Some(g) if !replace => (g.capabilities.clone(), g.capabilities.clone()),
+                _ if include_default => (default_automation_capabilities(), Vec::new()),
+                _ => (Vec::new(), Vec::new()),
             };
             let caps = merge_capabilities(base, extra);
-            check_within_caller(ctx, &caps)?;
-            let gname = grant_name.unwrap_or_else(|| format!("automation:{}", automation.name));
-            // Re-minting an existing grant changes it for everything bound to it;
+            // §19 attenuation on what this call confers; capabilities the grant
+            // already holds were conferred by whoever set them.
+            let held_tokens: HashSet<String> = held.iter().map(Capability::to_token).collect();
+            let conferred: Vec<Capability> = caps
+                .iter()
+                .filter(|c| !held_tokens.contains(&c.to_token()))
+                .cloned()
+                .collect();
+            check_within_caller(ctx, &conferred)?;
+            // Changing an existing grant changes it for everything bound to it;
             // only allow that when nothing else depends on it.
-            let existing = self
-                .store
-                .grants()
-                .list_by_workspace(ws)
-                .await?
-                .into_iter()
-                .find(|g| g.name == gname);
             let constraints = match &existing {
                 Some(g) => {
                     let others: Vec<String> = self

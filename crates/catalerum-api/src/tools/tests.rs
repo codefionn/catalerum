@@ -7062,6 +7062,43 @@ async fn automation_debug_tools_diagnose_and_fix_run_authority() {
         .iter()
         .all(|w| !w.as_str().unwrap().contains("exec:run")));
 
+    // Fixing a second missing capability adds to the bound grant: exec:run,
+    // granted earlier, survives (it used to be replaced away).
+    let extended = registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["web:read"] }),
+            &ctx,
+        )
+        .await
+        .expect("extend");
+    let caps = extended["authority"]["capabilities"].as_array().unwrap();
+    assert!(caps.contains(&json!("exec:run")), "kept: {caps:?}");
+    assert!(caps.contains(&json!("web:read")), "added: {caps:?}");
+    assert!(caps.contains(&json!("notes:write")), "default authority kept");
+    let still_bound = store.automations().get_by_name(ws.id, &name).await.unwrap().unwrap();
+    assert_eq!(updated["grant_id"], json!(still_bound.grant_id), "same grant extended, not a new one");
+
+    // replace=true sets exactly default + the listed ones.
+    let replaced = registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["web:read"], "replace": true }),
+            &ctx,
+        )
+        .await
+        .expect("replace");
+    let caps = replaced["authority"]["capabilities"].as_array().unwrap();
+    assert!(!caps.contains(&json!("exec:run")), "replaced: {caps:?}");
+    registry
+        .dispatch(
+            "set_automation_grant",
+            json!({ "name": name, "capabilities": ["exec:run"] }),
+            &ctx,
+        )
+        .await
+        .expect("re-add exec");
+
     // list_grants shows the binding; the grant can't be re-minted under a name
     // another automation also uses.
     let grants = registry

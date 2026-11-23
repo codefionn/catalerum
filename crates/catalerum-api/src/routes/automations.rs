@@ -300,6 +300,16 @@ async fn upsert(
     if let Some(spec) = body.spec.as_mut() {
         catalerum_automation::apply_auto_layout(spec);
     }
+    // The grant is not part of the definition (clients can't set it; it is
+    // bound with set_automation_grant), so a replace keeps whatever the
+    // automation runs under. Clearing it here unbound the grant on every save
+    // from the visual editor, and the next scheduled run was denied.
+    let grant_id = state
+        .store()
+        .automations()
+        .get_by_name(p.workspace_id, &name)
+        .await?
+        .and_then(|a| a.grant_id);
     let spec = NewAutomation {
         name,
         enabled: body.enabled,
@@ -307,10 +317,7 @@ async fn upsert(
         condition: body.condition,
         actions: body.actions,
         spec: body.spec,
-        // A replace currently clears any grant (upsert overwrites every column).
-        // Harmless today (no grants exist); whether a definition-replace should
-        // *preserve* the run-grant is decided by the §19 policy-engine slice.
-        grant_id: None,
+        grant_id,
     };
     let automation = state
         .store()
